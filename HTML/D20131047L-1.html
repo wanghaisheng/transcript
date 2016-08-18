@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+
+<!-- Created by pdf2htmlEX (https://github.com/coolwanglu/pdf2htmlex) -->
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8"/>
+<meta content="pdf2htmlEX" name="generator"/>
+<meta content="IE=edge,chrome=1" http-equiv="X-UA-Compatible"/>
+
+
+
+<script>
+/*
+ Copyright 2012 Mozilla Foundation 
+ Copyright 2013 Lu Wang <coolwanglu@gmail.com>
+ Apachine License Version 2.0 
+*/
+(function(){function b(a,b,e,f){var c=(a.className||"").split(/\s+/g);""===c[0]&&c.shift();var d=c.indexOf(b);0>d&&e&&c.push(b);0<=d&&f&&c.splice(d,1);a.className=c.join(" ");return 0<=d}if(!("classList"in document.createElement("div"))){var e={add:function(a){b(this.element,a,!0,!1)},contains:function(a){return b(this.element,a,!1,!1)},remove:function(a){b(this.element,a,!1,!0)},toggle:function(a){b(this.element,a,!0,!0)}};Object.defineProperty(HTMLElement.prototype,"classList",{get:function(){if(this._classList)return this._classList;
+var a=Object.create(e,{element:{value:this,writable:!1,enumerable:!0}});Object.defineProperty(this,"_classList",{value:a,writable:!1,enumerable:!1});return a},enumerable:!0})}})();
+</script>
+<script>
+/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab filetype=javascript : */
+/** 
+ * @license pdf2htmlEX.js: Core UI functions for pdf2htmlEX 
+ * Copyright 2012,2013 Lu Wang <coolwanglu@gmail.com> and other contributors 
+ * https://github.com/coolwanglu/pdf2htmlEX/blob/master/share/LICENSE 
+ */
+
+/*
+ * Attention:
+ * This files is to be optimized by closure-compiler, 
+ * so pay attention to the forms of property names:
+ *
+ * string/bracket form is safe, won't be optimized:
+ * var obj={ 'a':'b' }; obj['a'] = 'b';
+ * name/dot form will be optimized, the name is likely to be modified:
+ * var obj={ a:'b' }; obj.a = 'b';
+ *
+ * Either form can be used for internal objects, 
+ * but must be consistent for each one respectively.
+ *
+ * string/bracket form must be used for external objects
+ * e.g. DEFAULT_CONFIG, object stored in page-data
+ * property names are part of the `protocol` in these cases.
+ *
+ */
+
+'use strict';
+
+var pdf2htmlEX = window['pdf2htmlEX'] = window['pdf2htmlEX'] || {};
+
+/** 
+ * @const 
+ * @struct
+ */
+var CSS_CLASS_NAMES = {
+  page_frame       : 'pf',
+  page_content_box : 'pc',
+  page_data        : 'pi',
+  background_image : 'bi',
+  link             : 'l',
+  input_radio      : 'ir',
+  __dummy__        : 'no comma'
+};
+
+/** 
+ * configurations of Viewer
+ * @const 
+ * @dict
+ */
+var DEFAULT_CONFIG = {
+  // id of the element to put the pages in
+  'container_id' : 'page-container',
+  // id of the element for sidebar (to open and close)
+  'sidebar_id' : 'sidebar',
+  // id of the element for outline
+  'outline_id' : 'outline',
+  // class for the loading indicator
+  'loading_indicator_cls' : 'loading-indicator',
+  // How many page shall we preload that are below the last visible page
+  'preload_pages' : 3,
+  // how many ms should we wait before actually rendering the pages and after a scroll event
+  'render_timeout' : 100,
+  // zoom ratio step for each zoom in/out event
+  'scale_step' : 0.9,
+  // register global key handler, allowing navigation by keyboard
+  'key_handler' : true,
+  // register hashchange handler, navigate to the location specified by the hash
+  'hashchange_handler' : true,
+  // register view history handler, allowing going back to the previous location
+  'view_history_handler' : true,
+
+  '__dummy__'        : 'no comma'
+};
+
+/** @const */
+var EPS = 1e-6;
+
+/************************************/
+/* utility function */
+/**
+ * @param{Array.<number>} ctm
+ */
+function invert(ctm) {
+  var det = ctm[0] * ctm[3] - ctm[1] * ctm[2];
+  return [ ctm[3] / det
+          ,-ctm[1] / det
+          ,-ctm[2] / det
+          ,ctm[0] / det
+          ,(ctm[2] * ctm[5] - ctm[3] * ctm[4]) / det
+          ,(ctm[1] * ctm[4] - ctm[0] * ctm[5]) / det
+        ];
+};
+/**
+ * @param{Array.<number>} ctm
+ * @param{Array.<number>} pos
+ */
+function transform(ctm, pos) {
+  return [ctm[0] * pos[0] + ctm[2] * pos[1] + ctm[4]
+         ,ctm[1] * pos[0] + ctm[3] * pos[1] + ctm[5]];
+};
+
+/**
+ * @param{Element} ele
+ */
+function get_page_number(ele) {
+  return parseInt(ele.getAttribute('data-page-no'), 16);
+};
+
+/**
+ * @param{NodeList} eles
+ */
+function disable_dragstart(eles) {
+  for (var i = 0, l = eles.length; i < l; ++i) {
+    eles[i].addEventListener('dragstart', function() {
+      return false;
+    }, false);
+  }
+};
+
+/**
+ * @param{...Object} var_args
+ */
+function clone_and_extend_objs(var_args) {
+  var result_obj = {};
+  for (var i = 0, l = arguments.length; i < l; ++i) {
+    var cur_obj = arguments[i];
+    for (var k in cur_obj) {
+      if (cur_obj.hasOwnProperty(k)) {
+        result_obj[k] = cur_obj[k];
+      }
+    }
+  }
+  return result_obj;
+};
+
+/** 
+ * @constructor 
+ * @param{Element} page The element for the page
+ */
+function Page(page) {
+  if (!page) return;
+
+  this.loaded = false;
+  this.shown = false;
+  this.page = page; // page frame element
+
+  this.num = get_page_number(page);
+
+  // page size
+  // Need to make rescale work when page_content_box is not loaded, yet
+  this.original_height = page.clientHeight;     
+  this.original_width = page.clientWidth;
+
+  // content box
+  var content_box = page.getElementsByClassName(CSS_CLASS_NAMES.page_content_box)[0];
+
+  // if page is loaded
+  if (content_box) {
+    this.content_box = content_box;
+    /*
+     * scale ratios
+     *
+     * original_scale : the first one
+     * cur_scale : currently using
+     */
+    this.original_scale = this.cur_scale = this.original_height / content_box.clientHeight;
+    this.page_data = JSON.parse(page.getElementsByClassName(CSS_CLASS_NAMES.page_data)[0].getAttribute('data-data'));
+
+    this.ctm = this.page_data['ctm'];
+    this.ictm = invert(this.ctm);
+
+    this.loaded = true;
+  }
+};
+Page.prototype = {
+  /* hide & show are for contents, the page frame is still there */
+  hide : function(){
+    if (this.loaded && this.shown) {
+      this.content_box.classList.remove('opened');
+      this.shown = false;
+    }
+  },
+  show : function(){
+    if (this.loaded && !this.shown) {
+      this.content_box.classList.add('opened');
+      this.shown = true;
+    }
+  },
+  /**
+   * @param{number} ratio
+   */
+  rescale : function(ratio) {
+    if (ratio === 0) {
+      // reset scale
+      this.cur_scale = this.original_scale;
+    } else {
+      this.cur_scale = ratio;
+    }
+
+    // scale the content box
+    if (this.loaded) {
+      var cbs = this.content_box.style;
+      cbs.msTransform = cbs.webkitTransform = cbs.transform = 'scale('+this.cur_scale.toFixed(3)+')';
+    }
+
+    // stretch the page frame to hold the place
+    {
+      var ps = this.page.style;
+      ps.height = (this.original_height * this.cur_scale) + 'px';
+      ps.width = (this.original_width * this.cur_scale) + 'px';
+    }
+  },
+  /*
+   * return the coordinate of the top-left corner of container
+   * in our coordinate system
+   * assuming that p.parentNode === p.offsetParent
+   */
+  view_position : function () {
+    var p = this.page;
+    var c = p.parentNode;
+    return [c.scrollLeft - p.offsetLeft - p.clientLeft
+           ,c.scrollTop - p.offsetTop - p.clientTop];
+  },
+  height : function () {
+    return this.page.clientHeight;
+  },
+  width : function () {
+    return this.page.clientWidth;
+  }
+};
+
+/** 
+ * @constructor
+ * @param{Object=} config
+ */
+function Viewer(config) {
+  this.config = clone_and_extend_objs(DEFAULT_CONFIG, (arguments.length > 0 ? config : {}));
+  this.pages_loading = [];
+  this.init_before_loading_content();
+
+  var self = this;
+  document.addEventListener('DOMContentLoaded', function(){
+    self.init_after_loading_content();
+  }, false);
+};
+
+Viewer.prototype = {
+  scale : 1,
+  /* 
+   * index of the active page (the one with largest visible area)
+   * which estimates the page currently being viewed
+   */
+  cur_page_idx : 0,
+
+  /*
+   * index of the first visible page
+   * used when determining current view
+   */
+  first_page_idx : 0,
+
+  init_before_loading_content : function() {
+    /* hide all pages before loading, will reveal only visible ones later */
+    this.pre_hide_pages();
+  },
+
+  initialize_radio_button : function() {
+    var elements = document.getElementsByClassName(CSS_CLASS_NAMES.input_radio);
+    
+    for(var i = 0; i < elements.length; i++) {
+      var r = elements[i];
+
+      r.addEventListener('click', function() {
+        this.classList.toggle("checked");
+      });
+    }
+  },
+
+  init_after_loading_content : function() {
+    this.sidebar = document.getElementById(this.config['sidebar_id']);
+    this.outline = document.getElementById(this.config['outline_id']);
+    this.container = document.getElementById(this.config['container_id']);
+    this.loading_indicator = document.getElementsByClassName(this.config['loading_indicator_cls'])[0];
+
+    
+    {
+      // Open the outline if nonempty
+      var empty = true;
+      var nodes = this.outline.childNodes;
+      for (var i = 0, l = nodes.length; i < l; ++i) {
+        var cur_node = nodes[i];
+        if (cur_node.nodeName.toLowerCase() === 'ul') {
+          empty = false;
+          break;
+        }
+      }
+      if (!empty)
+        this.sidebar.classList.add('opened');
+    }
+
+    this.find_pages();
+    // do nothing if there's nothing
+    if(this.pages.length == 0) return;
+
+    // disable dragging of background images
+    disable_dragstart(document.getElementsByClassName(CSS_CLASS_NAMES.background_image));
+
+    if (this.config['key_handler'])
+      this.register_key_handler();
+
+    var self = this;
+
+    if (this.config['hashchange_handler']) {
+      window.addEventListener('hashchange', function(e) {
+        self.navigate_to_dest(document.location.hash.substring(1));
+      }, false);
+    }
+
+    if (this.config['view_history_handler']) {
+      window.addEventListener('popstate', function(e) {
+        if(e.state) self.navigate_to_dest(e.state);
+      }, false);
+    }
+
+    // register schedule rendering
+    // renew old schedules since scroll() may be called frequently
+    this.container.addEventListener('scroll', function() {
+      self.update_page_idx();
+      self.schedule_render(true);
+    }, false);
+
+    // handle links
+    [this.container, this.outline].forEach(function(ele) {
+      ele.addEventListener('click', self.link_handler.bind(self), false);
+    });
+
+    this.initialize_radio_button();
+    this.render();
+  },
+
+  /*
+   * set up this.pages and this.page_map
+   * pages is an array holding all the Page objects
+   * page-Map maps an original page number (in PDF) to the corresponding index in page
+   */
+  find_pages : function() {
+    var new_pages = [];
+    var new_page_map = {};
+    var nodes = this.container.childNodes;
+    for (var i = 0, l = nodes.length; i < l; ++i) {
+      var cur_node = nodes[i];
+      if ((cur_node.nodeType === Node.ELEMENT_NODE)
+          && cur_node.classList.contains(CSS_CLASS_NAMES.page_frame)) {
+        var p = new Page(cur_node);
+        new_pages.push(p);
+        new_page_map[p.num] = new_pages.length - 1;
+      }
+    }
+    this.pages = new_pages;
+    this.page_map = new_page_map;
+  },
+
+  /**
+   * @param{number} idx
+   * @param{number=} pages_to_preload
+   * @param{function(Page)=} callback
+   *
+   * TODO: remove callback -> promise ?
+   */
+  load_page : function(idx, pages_to_preload, callback) {
+    var pages = this.pages;
+    if (idx >= pages.length)
+      return;  // Page does not exist
+
+    var cur_page = pages[idx];
+    if (cur_page.loaded)
+      return;  // Page is loaded
+
+    if (this.pages_loading[idx])
+      return;  // Page is already loading
+
+    var cur_page_ele = cur_page.page;
+    var url = cur_page_ele.getAttribute('data-page-url');
+    if (url) {
+      this.pages_loading[idx] = true;       // set semaphore
+
+      // add a copy of the loading indicator if not already present
+      var new_loading_indicator = cur_page_ele.getElementsByClassName(this.config['loading_indicator_cls'])[0];
+      if (typeof new_loading_indicator === 'undefined'){
+        new_loading_indicator = this.loading_indicator.cloneNode(true);
+        new_loading_indicator.classList.add('active');
+        cur_page_ele.appendChild(new_loading_indicator);
+      }
+
+      // load data
+      {
+        var self = this;
+        var _idx = idx;
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.onload = function(){
+          if (xhr.status === 200 || xhr.status === 0) {
+            // find the page element in the data
+            var div = document.createElement('div');
+            div.innerHTML = xhr.responseText;
+
+            var new_page = null;
+            var nodes = div.childNodes;
+            for (var i = 0, l = nodes.length; i < l; ++i) {
+              var cur_node = nodes[i];
+              if ((cur_node.nodeType === Node.ELEMENT_NODE)
+                  && cur_node.classList.contains(CSS_CLASS_NAMES.page_frame)) {
+                new_page = cur_node;
+                break;
+              }
+            }
+
+            // replace the old page with loaded data
+            // the loading indicator on this page should also be destroyed
+            var p = self.pages[_idx];
+            self.container.replaceChild(new_page, p.page);
+            p = new Page(new_page);
+            self.pages[_idx] = p;
+
+            p.hide();
+            p.rescale(self.scale);
+
+            // disable background image dragging
+            disable_dragstart(new_page.getElementsByClassName(CSS_CLASS_NAMES.background_image));
+
+            self.schedule_render(false);
+
+            if (callback){ callback(p); }
+          }
+
+          // Reset loading token
+          delete self.pages_loading[_idx];
+        };
+        xhr.send(null);
+      }
+    }
+    // Concurrent prefetch of the next pages
+    if (pages_to_preload === undefined)
+      pages_to_preload = this.config['preload_pages'];
+
+    if (--pages_to_preload > 0) {
+      var self = this;
+      setTimeout(function() {
+        self.load_page(idx+1, pages_to_preload);
+      },0);
+    }
+  },
+
+  /*
+   * Hide all pages that have no 'opened' class
+   * The 'opened' class will be added to visible pages by JavaScript
+   * We cannot add this in the default CSS because JavaScript may be disabled
+   */
+  pre_hide_pages : function() {
+    /* pages might have not been loaded yet, so add a CSS rule */
+    var s = '@media screen{.'+CSS_CLASS_NAMES.page_content_box+'{display:none;}}';
+    var n = document.createElement('style');
+    if (n.styleSheet) {
+      n.styleSheet.cssText = s;
+    } else {
+      n.appendChild(document.createTextNode(s));
+    }
+    document.head.appendChild(n);
+  },
+
+  /*
+   * show visible pages and hide invisible pages
+   */
+  render : function () {
+    var container = this.container;
+    /* 
+     * show the pages that are 'nearly' visible -- it's right above or below the container
+     *
+     * all the y values are in the all-page element's coordinate system
+     */
+    var container_min_y = container.scrollTop;
+    var container_height = container.clientHeight;
+    var container_max_y = container_min_y + container_height;
+    var visible_min_y = container_min_y - container_height;
+    var visible_max_y = container_max_y + container_height;
+
+    var cur_page_fully_visible = false;
+    var cur_page_idx = this.cur_page_idx;
+    var max_visible_page_idx = cur_page_idx;
+    var max_visible_ratio = 0.0;
+
+    var pl = this.pages;
+    for (var i = 0, l = pl.length; i < l; ++i) {
+      var cur_page = pl[i];
+      var cur_page_ele = cur_page.page;
+      var page_min_y = cur_page_ele.offsetTop + cur_page_ele.clientTop;
+      var page_height = cur_page_ele.clientHeight;
+      var page_max_y = page_min_y + page_height;
+      if ((page_min_y <= visible_max_y) && (page_max_y >= visible_min_y))
+      {
+        // cur_page is 'nearly' visible, show it or load it
+        if (cur_page.loaded) {
+          cur_page.show();
+        } else {
+          this.load_page(i);
+        }
+      } else {
+        cur_page.hide();
+      }
+    }
+  },
+  /*
+   * update cur_page_idx and first_page_idx
+   * normally called upon scrolling
+   */
+  update_page_idx: function () {
+    var pages = this.pages;
+    var pages_len = pages.length;
+    // there is no chance that cur_page_idx or first_page_idx is modified
+    if (pages_len < 2) return;
+   
+    var container = this.container;
+    var container_min_y = container.scrollTop;
+    var container_max_y = container_min_y + container.clientHeight;
+
+    // binary search for the first page
+    // whose bottom border is below the top border of the container
+    var first_idx = -1;
+    var last_idx = pages_len;
+    var rest_len = last_idx - first_idx;
+    // TODO: use current first_page_idx as a hint?
+    while(rest_len > 1) {
+      var idx = first_idx + Math.floor(rest_len / 2);
+      var cur_page_ele = pages[idx].page;
+      if (cur_page_ele.offsetTop + cur_page_ele.clientTop + cur_page_ele.clientHeight >= container_min_y) {
+        last_idx = idx;
+      } else {
+        first_idx = idx;
+      }
+      rest_len = last_idx - first_idx;
+    }
+    
+    /*
+     * with malformed settings it is possible that no page is visible, e.g.
+     * - the container is to thin, which lies in the margin between two pages
+     * - all pages are completely above or below the container
+     * but we just assume that they won't happen.
+     */
+    this.first_page_idx = last_idx;
+
+    // find the page with largest visible area
+    var cur_page_idx = this.cur_page_idx;
+    var max_visible_page_idx = cur_page_idx;
+    var max_visible_ratio = 0.0;
+
+    for(var i = last_idx; i < pages_len; ++i) {
+      var cur_page_ele = pages[i].page;
+      var page_min_y = cur_page_ele.offsetTop + cur_page_ele.clientTop;
+      var page_height = cur_page_ele.clientHeight;
+      var page_max_y = page_min_y + page_height;
+      if (page_min_y > container_max_y) break;
+
+      // check the visible fraction of the page
+      var page_visible_ratio = ( Math.min(container_max_y, page_max_y) 
+                                 - Math.max(container_min_y, page_min_y)
+                               ) / page_height;
+
+      // stay with the current page if it is still fully visible
+      if ((i === cur_page_idx) && (Math.abs(page_visible_ratio - 1.0) <= EPS)) {
+        max_visible_page_idx = cur_page_idx;
+        break;
+      }
+
+      if (page_visible_ratio > max_visible_ratio) {
+        max_visible_ratio = page_visible_ratio;
+        max_visible_page_idx = i;
+      }
+    }
+
+    this.cur_page_idx = max_visible_page_idx;
+  },
+
+  /**
+   * @param{boolean} renew renew the existing schedule instead of using the old one
+   */
+  schedule_render : function(renew) {
+    if (this.render_timer !== undefined) {
+      if (!renew) return;
+      clearTimeout(this.render_timer);
+    }
+
+    var self = this;
+    this.render_timer = setTimeout(function () {
+      /*
+       * render() may trigger load_page(), which may in turn trigger another render()
+       * so delete render_timer first
+       */
+      delete self.render_timer;
+      self.render();
+    }, this.config['render_timeout']);
+  },
+
+  /*
+   * Handling key events, zooming, scrolling etc.
+   */
+  register_key_handler: function () {
+    /* 
+     * When user try to zoom in/out using ctrl + +/- or mouse wheel
+     * handle this and prevent the default behaviours
+     *
+     * Code credit to PDF.js
+     */
+    var self = this;
+
+    // Firefox specific event, so that we can prevent browser from zooming
+    window.addEventListener('DOMMouseScroll', function(e) {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        var container = self.container;
+        var rect = container.getBoundingClientRect();
+        var fixed_point = [e.clientX - rect['left'] - container.clientLeft
+                          ,e.clientY - rect['top'] - container.clientTop];
+        self.rescale(Math.pow(self.config['scale_step'], e.detail), true, fixed_point);
+      }
+    }, false);
+
+    window.addEventListener('keydown', function(e) {
+      var handled = false;
+      /*
+      var cmd = (e.ctrlKey ? 1 : 0)
+                | (e.altKey ? 2 : 0)
+                | (e.shiftKey ? 4 : 0)
+                | (e.metaKey ? 8 : 0)
+                ;
+                */
+      var with_ctrl = e.ctrlKey || e.metaKey;
+      var with_alt = e.altKey;
+      switch (e.keyCode) {
+        case 61: // FF/Mac '='
+        case 107: // FF '+' and '='
+        case 187: // Chrome '+'
+          if (with_ctrl){
+            self.rescale(1.0 / self.config['scale_step'], true);
+            handled = true;
+          }
+          break;
+        case 173: // FF/Mac '-'
+        case 109: // FF '-'
+        case 189: // Chrome '-'
+          if (with_ctrl){
+            self.rescale(self.config['scale_step'], true);
+            handled = true;
+          }
+          break;
+        case 48: // '0'
+          if (with_ctrl){
+            self.rescale(0, false);
+            handled = true;
+          }
+          break;
+        case 33: // Page UP:
+          if (with_alt) { // alt-pageup    -> scroll one page up
+            self.scroll_to(self.cur_page_idx - 1);
+          } else { // pageup        -> scroll one screen up
+            self.container.scrollTop -= self.container.clientHeight;
+          }
+          handled = true;
+          break;
+        case 34: // Page DOWN
+          if (with_alt) { // alt-pagedown  -> scroll one page down
+            self.scroll_to(self.cur_page_idx + 1);
+          } else { // pagedown      -> scroll one screen down
+            self.container.scrollTop += self.container.clientHeight;
+          }
+          handled = true;
+          break;
+        case 35: // End
+          self.container.scrollTop = self.container.scrollHeight;
+          handled = true;
+          break;
+        case 36: // Home
+          self.container.scrollTop = 0;
+          handled = true;
+          break;
+      }
+      if (handled) {
+        e.preventDefault();
+        return;
+      }
+    }, false);
+  },
+
+  /**
+   * @param{number} ratio
+   * @param{boolean} is_relative
+   * @param{Array.<number>=} fixed_point preserve the position (relative to the top-left corner of the viewer) after rescaling
+   */
+  rescale : function (ratio, is_relative, fixed_point) {
+    var old_scale = this.scale;
+    var new_scale = old_scale;
+    // set new scale
+    if (ratio === 0) {
+      new_scale = 1;
+      is_relative = false;
+    } else if (is_relative)
+      new_scale *= ratio;
+    else
+      new_scale = ratio;
+
+    this.scale = new_scale;
+
+    if (!fixed_point)
+      fixed_point = [0,0];
+
+    // translate fixed_point to the coordinate system of all pages
+    var container = this.container;
+    fixed_point[0] += container.scrollLeft;
+    fixed_point[1] += container.scrollTop;
+
+    // find the visible page that contains the fixed point
+    // if the fixed point lies between two pages (including their borders), it's contained in the first one
+    var pl = this.pages;
+    var pl_len = pl.length;
+    for (var i = this.first_page_idx; i < pl_len; ++i) {
+      var p = pl[i].page;
+      if (p.offsetTop + p.clientTop >= fixed_point[1])
+        break;
+    }
+    var fixed_point_page_idx = i - 1;
+
+    // determine the new scroll position
+    // each-value consists of two parts, one inside the page, which is affected by rescaling,
+    // the other is outside, (e.g. borders and margins), which is not affected
+
+    // if the fixed_point is above the first page, use the first page as the reference
+    if (fixed_point_page_idx < 0) 
+      fixed_point_page_idx = 0;
+
+    var fp_p = pl[fixed_point_page_idx].page;
+    var fp_p_width = fp_p.clientWidth;
+    var fp_p_height = fp_p.clientHeight;
+
+    var fp_x_ref = fp_p.offsetLeft + fp_p.clientLeft;
+    var fp_x_inside = fixed_point[0] - fp_x_ref;
+    if (fp_x_inside < 0)
+      fp_x_inside = 0;
+    else if (fp_x_inside > fp_p_width)
+      fp_x_inside = fp_p_width;
+
+    var fp_y_ref = fp_p.offsetTop + fp_p.clientTop;
+    var fp_y_inside = fixed_point[1] - fp_y_ref;
+    if (fp_y_inside < 0)
+      fp_y_inside = 0;
+    else if (fp_y_inside > fp_p_height)
+      fp_y_inside = fp_p_height;
+
+    // Rescale pages
+    for (var i = 0; i < pl_len; ++i) 
+        pl[i].rescale(new_scale);  
+
+    // Correct container scroll to keep view aligned while zooming
+    container.scrollLeft += fp_x_inside / old_scale * new_scale + fp_p.offsetLeft + fp_p.clientLeft - fp_x_inside - fp_x_ref;
+    container.scrollTop += fp_y_inside / old_scale * new_scale + fp_p.offsetTop + fp_p.clientTop - fp_y_inside - fp_y_ref;
+
+    // some pages' visibility may be toggled, wait for next render()
+    // renew old schedules since rescale() may be called frequently
+    this.schedule_render(true);
+  },
+
+  fit_width : function () {
+    var page_idx = this.cur_page_idx;
+    this.rescale(this.container.clientWidth / this.pages[page_idx].width(), true);
+    this.scroll_to(page_idx);
+  },
+
+  fit_height : function () {
+    var page_idx = this.cur_page_idx;
+    this.rescale(this.container.clientHeight / this.pages[page_idx].height(), true);
+    this.scroll_to(page_idx);
+  },
+  /**
+   * @param{Node} ele
+   */
+  get_containing_page : function(ele) {
+    /* get the page obj containing obj */
+    while(ele) {
+      if ((ele.nodeType === Node.ELEMENT_NODE)
+          && ele.classList.contains(CSS_CLASS_NAMES.page_frame)) {
+        /*
+         * Get original page number and map it to index of pages
+         * TODO: store the index on the dom element
+         */
+        var pn = get_page_number(/** @type{Element} */(ele));
+        var pm = this.page_map;
+        return (pn in pm) ? this.pages[pm[pn]] : null;
+      }
+      ele = ele.parentNode;
+    }
+    return null;
+  },
+
+  /**
+   * @param{Event} e
+   */
+  link_handler : function (e) {
+    var target = /** @type{Node} */(e.target);
+    var detail_str = /** @type{string} */ (target.getAttribute('data-dest-detail'));
+    if (!detail_str) return;
+
+    if (this.config['view_history_handler']) {
+      try {
+        var cur_hash = this.get_current_view_hash();
+        window.history.replaceState(cur_hash, '', '#' + cur_hash);
+        window.history.pushState(detail_str, '', '#' + detail_str);
+      } catch(ex) { }
+    }
+    this.navigate_to_dest(detail_str, this.get_containing_page(target));
+    e.preventDefault();
+  },
+
+  /**
+   * @param{string} detail_str may come from user provided hashtag, need sanitzing
+   * @param{Page=} src_page page containing the source event (e.g. link)
+   */
+  navigate_to_dest : function(detail_str, src_page) {
+    try {
+      var detail = JSON.parse(detail_str);
+    } catch(e) {
+      return;
+    }
+
+    if(!(detail instanceof Array)) return;
+
+    var target_page_no = detail[0];
+    var page_map = this.page_map;
+    if (!(target_page_no in page_map)) return;
+    var target_page_idx = page_map[target_page_no];
+    var target_page = this.pages[target_page_idx];
+
+    for (var i = 2, l = detail.length; i < l; ++i) {
+      var d = detail[i];
+      if(!((d === null) || (typeof d === 'number')))
+        return;
+    }
+
+    while(detail.length < 6)
+      detail.push(null);
+
+    // cur_page might be undefined, e.g. from Outline
+    var cur_page = src_page || this.pages[this.cur_page_idx];
+
+    var cur_pos = cur_page.view_position();
+    cur_pos = transform(cur_page.ictm, [cur_pos[0], cur_page.height()-cur_pos[1]]);
+
+    var zoom = this.scale;
+    var pos = [0,0];
+    var upside_down = true;
+    var ok = false;
+
+    // position specified in `detail` are in the raw coordinate system of the page (unscaled)
+    var scale = this.scale;
+    // TODO: fitb*
+    // TODO: BBox
+    switch(detail[1]) {
+      case 'XYZ':
+        pos = [ (detail[2] === null) ? cur_pos[0] : detail[2] * scale
+              , (detail[3] === null) ? cur_pos[1] : detail[3] * scale ];
+        zoom = detail[4];
+        if ((zoom === null) || (zoom === 0))
+          zoom = this.scale;
+        ok = true;
+        break;
+      case 'Fit':
+      case 'FitB':
+        pos = [0,0];
+        ok = true;
+        break;
+      case 'FitH':
+      case 'FitBH':
+        pos = [0, (detail[2] === null) ? cur_pos[1] : detail[2] * scale];
+        ok = true;
+        break;
+      case 'FitV':
+      case 'FitBV':
+        pos = [(detail[2] === null) ? cur_pos[0] : detail[2] * scale, 0];
+        ok = true;
+        break;
+      case 'FitR':
+        /* locate the top-left corner of the rectangle */
+        // TODO
+        pos = [detail[2] * scale, detail[5] * scale];
+        upside_down = false;
+        ok = true;
+        break;
+      default:
+        break;
+    }
+
+    if (!ok) return;
+
+    this.rescale(zoom, false);
+
+    var self = this;
+    /**
+     * page should of type Page 
+     * @param{Page} page 
+     */
+    var transform_and_scroll = function(page) {
+      pos = transform(page.ctm, pos);
+      if (upside_down) {
+        pos[1] = page.height() - pos[1];
+      }
+      self.scroll_to(target_page_idx, pos);
+    };
+
+    if (target_page.loaded) {
+      transform_and_scroll(target_page);
+    } else {
+      // TODO: scroll_to may finish before load_page
+
+      // Scroll to the exact position once loaded.
+      this.load_page(target_page_idx, undefined, transform_and_scroll);
+
+      // In the meantime page gets loaded, scroll approximately position for maximum responsiveness.
+      this.scroll_to(target_page_idx);
+    }
+  }, 
+
+  /**
+   * @param{number} page_idx
+   * @param{Array.<number>=} pos [x,y] where (0,0) is the top-left corner
+   */
+  scroll_to : function(page_idx, pos) {
+    var pl = this.pages;
+    if ((page_idx < 0) || (page_idx >= pl.length)) return;
+    var target_page = pl[page_idx];
+    var cur_target_pos = target_page.view_position();
+
+    if (pos === undefined)
+      pos = [0,0];
+
+    var container = this.container;
+    container.scrollLeft += pos[0] - cur_target_pos[0];
+    container.scrollTop += pos[1] - cur_target_pos[1];
+  },
+
+  /**
+   * generate the hash for the current view
+   */
+  get_current_view_hash : function() {
+    var detail = [];
+    var cur_page = this.pages[this.cur_page_idx];
+
+    detail.push(cur_page.num);
+    detail.push('XYZ');
+
+    var cur_pos = cur_page.view_position();
+    cur_pos = transform(cur_page.ictm, [cur_pos[0], cur_page.height()-cur_pos[1]]);
+    detail.push(cur_pos[0] / this.scale);
+    detail.push(cur_pos[1] / this.scale);
+    
+    detail.push(this.scale);
+
+    return JSON.stringify(detail);
+  }
+};
+
+// export pdf2htmlEX.Viewer
+pdf2htmlEX['Viewer'] = Viewer;
+</script>
+<script>
+try{
+pdf2htmlEX.defaultViewer = new pdf2htmlEX.Viewer({});
+}catch(e){}
+</script>
+<title></title>
+</head>
+<body><style>@media screen { /* for sidebar */ #sidebar.opened + #page-container { left: 250px } #page-container { /* `bottom' and `right' are required for lazy page loading in pdf2htmlEX.js (page visibility test) * alternatively you may set width and height */ bottom: 0; right: 0; overflow: auto } .loading-indicator { display: none } .loading-indicator.active { display: block; position: absolute; width: 64px; height: 64px; top: 50%; left: 50%; margin-top: -32px; margin-left: -32px } .loading-indicator img { position: absolute; top: 0; left: 0; bottom: 0; right: 0 } }
+@media print { html { margin: 0 } body { margin: 0; -webkit-print-color-adjust: exact; /* enable printing background images for WebKit */ } #sidebar { display: none } #page-container { width: auto; height: auto; overflow: visible; background-color: transparent } .d { display: none } }
+@media print { .pf { margin: 0; box-shadow: none; page-break-after: always; page-break-inside: avoid } @-moz-document url-prefix() { /* fix page truncation for FireFox */ . pf { overflow: visible; border: 1px solid #FFF; } . pc { overflow: visible; } } }
+@media screen { #sidebar { background-color: #2f3236; /* modified from http://philbit.com/svgpatterns/#crossstripes */ background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjNDAzYzNmIj48L3JlY3Q+CjxwYXRoIGQ9Ik0wIDBMNCA0Wk00IDBMMCA0WiIgc3Ryb2tlLXdpZHRoPSIxIiBzdHJva2U9IiMxZTI5MmQiPjwvcGF0aD4KPC9zdmc+") } #outline { font-family: Georgia, Times, "Times New Roman", serif; font-size: 13px; margin: 2em 1em } #outline ul { padding: 0 } #outline li { list-style-type: none; margin: 1em 0 } #outline li > ul { margin-left: 1em } #outline a, #outline a:visited, #outline a:hover, #outline a:active { line-height: 1.2; color: #e8e8e8; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; display: block; overflow: hidden; outline: 0 } #outline a:hover { color: rgb(0, 204, 255) } #page-container { background-color: #9e9e9e; /* http://philbit.com/svgpatterns/#thinstripes */ background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1IiBoZWlnaHQ9IjUiPgo8cmVjdCB3aWR0aD0iNSIgaGVpZ2h0PSI1IiBmaWxsPSIjOWU5ZTllIj48L3JlY3Q+CjxwYXRoIGQ9Ik0wIDVMNSAwWk02IDRMNCA2Wk0tMSAxTDEgLTFaIiBzdHJva2U9IiM4ODgiIHN0cm9rZS13aWR0aD0iMSI+PC9wYXRoPgo8L3N2Zz4="); -webkit-transition: left 500ms; transition: left 500ms } .pf { margin: 13px auto; box-shadow: 1px 1px 3px 1px #333; /* Needed by IE to make box-shadow works * https://developer.mozilla.org/en-US/docs/Web/CSS/box-shadow */ border-collapse: separate } .pc.opened { /* used by pdf2htmlEX.js, to show/hide pages */ -webkit-animation: fadein 100ms; animation: fadein 100ms } .loading-indicator.active { /* * use 0.01s instead of 0s, * since YUI Compressor will change 0s to 0, * which is not recognized by Firefox */ -webkit-animation: swing 1.5s ease-in-out 0.01s infinite alternate none; animation: swing 1.5s ease-in-out 0.01s infinite alternate none } .checked { background: no-repeat url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABYAAAAWCAYAAADEtGw7AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH3goQDSYgDiGofgAAAslJREFUOMvtlM9LFGEYx7/vvOPM6ywuuyPFihWFBUsdNnA6KLIh+QPx4KWExULdHQ/9A9EfUodYmATDYg/iRewQzklFWxcEBcGgEplDkDtI6sw4PzrIbrOuedBb9MALD7zv+3m+z4/3Bf7bZS2bzQIAcrmcMDExcTeXy10DAFVVAQDksgFUVZ1ljD3yfd+0LOuFpmnvVVW9GHhkZAQcxwkNDQ2FSCQyRMgJxnVdy7KstKZpn7nwha6urqqfTqfPBAJAuVymlNLXoigOhfd5nmeiKL5TVTV+lmIKwAOA7u5u6Lped2BsbOwjY6yf4zgQQkAIAcedaPR9H67r3uYBQFEUFItFtLe332lpaVkUBOHK3t5eRtf1DwAwODiIubk5DA8PM8bYW1EU+wEgCIJqsCAIQAiB7/u253k2BQDDMJBKpa4mEon5eDx+UxAESJL0uK2t7XosFlvSdf0QAEmlUnlRFJ9Waho2Qghc1/U9z3uWz+eX+Wr+lL6SZfleEAQIggA8z6OpqSknimIvYyybSCReMsZ6TislhCAIAti2Dc/zejVNWwCAavN8339j27YbTg0AGGM3WltbP4WhlRWq6Q/btrs1TVsYHx+vNgqKoqBUKn2NRqPFxsbGJzzP05puUlpt0ukyOI6z7zjOwNTU1OLo6CgmJyf/gA3DgKIoWF1d/cIY24/FYgOU0pp0z/Ityzo8Pj5OTk9PbwHA+vp6zWghDC+VSiuRSOQgGo32UErJ38CO42wdHR09LBQK3zKZDDY2NupmFmF4R0cHVlZWlmRZ/iVJUn9FeWWcCCE4ODjYtG27Z2Zm5juAOmgdGAB2d3cBADs7O8uSJN2SZfl+WKlpmpumaT6Yn58vn/fs6XmbhmHMNjc3tzDGFI7jYJrm5vb29sDa2trPC/9aiqJUy5pOp4f6+vqeJ5PJBAB0dnZe/t8NBajx/z37Df5OGX8d13xzAAAAAElFTkSuQmCC") } }
+@media screen and (-webkit-min-device-pixel-ratio: 0) { .sc_ { -webkit-text-stroke: 0 transparent } .sc0 { -webkit-text-stroke: 0.015em transparent; text-shadow: none } }
+@media print { .v0 { vertical-align: 0 } .ls4 { letter-spacing: -0.592pt } .ls3 { letter-spacing: -0.32pt } .ls7 { letter-spacing: -0.183467pt } .ls6 { letter-spacing: -0.04736pt } .ls0 { letter-spacing: 0 } .ls5 { letter-spacing: 0.094933pt } .ls2 { letter-spacing: 0.230933pt } .ls1 { letter-spacing: 0.32pt } .ws0 { word-spacing: 0 } ._2 { width: 1.48736pt } ._3 { width: 3.1872pt } ._4 { width: 4.72768pt } ._6 { width: 6.88576pt } ._5 { width: 8.834773pt } ._0 { width: 818.810667pt } ._1 { width: 1093.546667pt } .fs0 { font-size: 48pt } .fs1 { font-size: 53.12pt } .y2 { bottom: 49.6pt } .y1 { bottom: 49.92pt } .y1f { bottom: 540.866667pt } .y1e { bottom: 556.866667pt } .y1c { bottom: 572.546667pt } .y1d { bottom: 572.866667pt } .y1b { bottom: 603.933333pt } .y1a { bottom: 620.093333pt } .y19 { bottom: 651.133333pt } .y17 { bottom: 666.813333pt } .y18 { bottom: 667.133333pt } .y16 { bottom: 698.333333pt } .y15 { bottom: 719.933333pt } .y14 { bottom: 735.933333pt } .y13 { bottom: 757.693333pt } .y12 { bottom: 779.293333pt } .y11 { bottom: 800.933333pt } .y10 { bottom: 816.933333pt } .yf { bottom: 832.933333pt } .ye { bottom: 856.453333pt } .yc { bottom: 872.293333pt } .yd { bottom: 872.613333pt } .yb { bottom: 903.333333pt } .ya { bottom: 919.653333pt } .y9 { bottom: 935.653333pt } .y8 { bottom: 951.653333pt } .y7 { bottom: 967.333333pt } .y6 { bottom: 987.653333pt } .y5 { bottom: 1003.333333pt } .y4 { bottom: 1019.36pt } .y3 { bottom: 1039.36pt } .y0 { bottom: 1062.24pt } .h1 { height: 53.25pt } .h2 { height: 58.93pt } .h3 { height: 60.823437pt } .h0 { height: 1122.56pt } .w0 { width: 793.76pt } .x0 { left: 68pt } .x7 { left: 89.312pt } .x9 { left: 98.272pt } .xa { left: 124.832pt } .x8 { left: 129.952pt } .xb { left: 143.546667pt } .x6 { left: 256.546667pt } .x4 { left: 337.666667pt } .x5 { left: 365.026667pt } .x3 { left: 396.866667pt } .xc { left: 441.853333pt } .x1 { left: 669.893333pt } .x2 { left: 725.893333pt } }</style>
+<div id="sidebar" style="position: absolute; top: 0; left: 0; bottom: 0; width: 250px; padding: 0; margin: 0; overflow: auto">
+<div id="outline">
+</div>
+</div>
+<div id="page-container" style="position: absolute; top: 0; left: 0; margin: 0; padding: 0; border: 0">
+<div class="pf w0 h0" data-page-no="1" id="pf1" style="position: relative; background-color: white; overflow: hidden; margin: 0; border: 0; height: 841.92px; width: 595.32px"><div class="pc pc1 w0 h0" style="position: absolute; border: 0; padding: 0; margin: 0; top: 0; left: 0; overflow: hidden; transform-origin: 0% 0%; -ms-transform-origin: 0% 0%; -webkit-transform-origin: 0% 0%; height: 841.92px; width: 595.32px; display: block"><div class="t m0 x0 h1 y0 ff1 fs0 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: ff1; line-height: 0.709473; font-style: normal; font-weight: normal; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 36px; bottom: 796.68px; height: 39.9375px; left: 51px'>©<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">Kancelaria Sejmu <span class="_ _0" style="display: inline-block; color: transparent; z-index: -1; width: 614.108px; position: relative; unicode-bidi: bidi-override"> </span> <span class="_ _1" style="display: inline-block; color: transparent; z-index: -1; width: 820.16px; position: relative; unicode-bidi: bidi-override"> </span>s. 1/1 </span></div><div class="t m0 x1 h1 y1 ff2 fs0 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 36px; bottom: 37.44px; height: 39.9375px; left: 502.42px'>2014-<span class="ls1" style="letter-spacing: 0.24px; position: relative; unicode-bidi: bidi-override">03</span>-<span class="ls1" style="letter-spacing: 0.24px; position: relative; unicode-bidi: bidi-override">10</span></div><div class="t m0 x2 h2 y2 ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 37.2px; height: 44.1975px; left: 544.42px'> </div><div class="t m0 x3 h3 y3 ff3 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, Bold, sans-serif; font-weight: bold; font-style: normal; line-height: 1.53418; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 779.52px; height: 45.617578px; left: 297.65px'> </div><div class="t m0 x3 h3 y4 ff3 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, Bold, sans-serif; font-weight: bold; font-style: normal; line-height: 1.53418; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 764.52px; height: 45.617578px; left: 297.65px'> </div><div class="t m0 x4 h3 y5 ff3 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, Bold, sans-serif; font-weight: bold; font-style: normal; line-height: 1.53418; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 752.5px; height: 45.617578px; left: 253.25px'>Dz.U. 2013 poz.<span class="_ _2" style="display: inline-block; color: transparent; z-index: -1; width: 1.11552px; position: relative; unicode-bidi: bidi-override"></span> 10<span class="ls1" style="letter-spacing: 0.24px; position: relative; unicode-bidi: bidi-override">47</span> </div><div class="t m0 x3 h2 y6 ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 740.74px; height: 44.1975px; left: 297.65px'> </div><div class="t m0 x5 h3 y7 ff3 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, Bold, sans-serif; font-weight: bold; font-style: normal; line-height: 1.53418; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 725.5px; height: 45.617578px; left: 273.77px'>U<span class="_ _3" style="display: inline-block; color: transparent; z-index: -1; width: 2.3904px; position: relative; unicode-bidi: bidi-override"></span>S<span class="_ _3"></span>T<span class="_ _3"></span>A<span class="_ _4" style="display: inline-block; color: transparent; z-index: -1; width: 3.54576px; position: relative; unicode-bidi: bidi-override"></span>W<span class="_ _3"></span>A<span class="_ _3"></span> </div><div class="t m0 x3 h2 y8 ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 713.74px; height: 44.1975px; left: 297.65px'> </div><div class="t m0 x4 h2 y9 ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 701.74px; height: 44.1975px; left: 253.25px'>z dnia 26 lipca <span class="_ _2"></span>2013 <span class="ls2" style="letter-spacing: 0.1732px; position: relative; unicode-bidi: bidi-override">r.</span> </div><div class="t m0 x3 h2 ya ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 689.74px; height: 44.1975px; left: 297.65px'> </div><div class="t m0 x6 h3 yb ff3 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, Bold, sans-serif; font-weight: bold; font-style: normal; line-height: 1.53418; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 677.5px; height: 45.617578px; left: 192.41px'>o zmianie ustaw<span class="_ _2"></span>y <span class="ff4" style="font-family: ff4; line-height: 0.900391; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">–</span> <span class="ff4" style="font-family: ff4; line-height: 0.900391; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">Prawo<span class="_ _2"></span> zamówień</span> publicznych<span class="_ _2"></span> </div><div class="t m0 x7 h3 yc ff3 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, Bold, sans-serif; font-weight: bold; font-style: normal; line-height: 1.53418; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 654.22px; height: 45.617578px; left: 66.984px'>Art. 1. </div><div class="t m0 x8 h2 yd ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 654.46px; height: 44.1975px; left: 97.464px'>W ustawie <span class="_ _2"></span>z dnia <span class="_ _2"></span>29 <span class="_ _2"></span>stycznia <span class="_ _2"></span>2004<span class="_ _2"></span> r. <span class="_ _2"></span><span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">–</span> <span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">P<span class="_ _2"></span>rawo za<span class="_ _2"></span>mówień</span> <span class="_ _2"></span>publicznych <span class="_ _2"></span>(Dz.<span class="_ _2"></span> U. <span class="_ _2"></span>z 2013 <span class="_ _2"></span>r. poz.<span class="_ _2"></span> 907 i <span class="_ _2"></span>984<span class="_ _2"></span>) <span class="_ _2"></span>w art. <span class="ls3" style="letter-spacing: -0.24px; position: relative; unicode-bidi: bidi-override">4 </span></div><div class="t m0 x0 h2 ye ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 642.34px; height: 44.1975px; left: 51px'>w <span class="ls1" style="letter-spacing: 0.24px; position: relative; unicode-bidi: bidi-override">pkt</span> 13 kropk<span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">ę</span> na ko<span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">ń</span>cu zast<span class="_ _2"></span><span class="ff5">ę</span>puje si<span class="ff5">ę</span> <span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">ś</span>red<span class="_ _2"></span>nikiem i dodaj<span class="_ _2"></span>e si<span class="ff5">ę</span> pkt <span class="ls1" style="letter-spacing: 0.24px; position: relative; unicode-bidi: bidi-override">14 </span>w brzmieniu: <span class="_ _5" style="display: inline-block; color: transparent; z-index: -1; width: 6.62608px; position: relative; unicode-bidi: bidi-override"></span> </div><div class="t m0 x9 h2 yf ff5 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 624.7px; height: 44.1975px; left: 73.704px'>„14)<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override"> <span class="_ _6" style="display: inline-block; color: transparent; z-index: -1; width: 5.16432px; position: relative; unicode-bidi: bidi-override"></span></span>zamówień<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override"> <span class="_ _6"></span>udzielanyc<span class="_ _2"></span>h <span class="_ _6"></span>przez <span class="_ _6"></span>Ministra <span class="_ _6"></span>Spra<span class="_ _2"></span>wiedliwo</span>ś<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">ci <span class="_ _6"></span>lub <span class="_ _6"></span>jednost<span class="_ _2"></span>ki <span class="_ _6"></span>organizacyjne <span class="_ _6"></span>S</span>ł<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">u</span>ż<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">b<span class="_ _2"></span>y <span class="_ _6"></span>Wi</span>ę<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">ziennej <span class="_ _6"></span>prz<span class="_ _2"></span><span class="ls3" style="letter-spacing: -0.24px; position: relative; unicode-bidi: bidi-override">y-</span></span></div><div class="t m0 x9 h2 y10 ff2 fs1 fc0 sc0 ls4 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: -0.444px; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 612.7px; height: 44.1975px; left: 73.704px'>wi<span class="ff5 ls0" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; letter-spacing: 0; position: relative; unicode-bidi: bidi-override">ę<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">zie<span class="_ _2"></span>nnym <span class="_ _6"></span>zak</span>ł<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">ado<span class="_ _2"></span>m <span class="_ _6"></span>pracy <span class="_ _6"></span>prowadzonym <span class="_ _6"></span>jako <span class="_ _6"></span>p<span class="_ _2"></span>rzedsi<span class="_ _2"></span></span>ę<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">biorstwa <span class="_ _6"></span>pa</span>ń<span class="_ _2"></span><span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">stwowe <span class="_ _6"></span>albo <span class="_ _6"></span>insty<span class="_ _2"></span>tucje <span class="_ _6"></span>gospodar<span class="_ _2"></span>ki <span class="_ _6"></span>bud</span>ż</span><span class="ls5" style="letter-spacing: 0.0712px; position: relative; unicode-bidi: bidi-override">et<span class="ls1" style="letter-spacing: 0.24px; position: relative; unicode-bidi: bidi-override">o-</span></span></div><div class="t m0 x9 h2 y11 ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 600.7px; height: 44.1975px; left: 73.704px'>wej, je<span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">ż</span>eli <span class="_ _2"></span><span class="ff5 ls6" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; letter-spacing: -0.03552px; position: relative; unicode-bidi: bidi-override">łą</span>cznie s<span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">ą</span> spe<span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">ł</span>nione <span class="_ _2"></span>nast<span class="ff5">ę</span>puj<span class="ff5">ą</span>ce <span class="_ _2"></span>warunki: </div><div class="t m0 xa h2 y12 ff2 fs1 fc0 sc0 ls5 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0.0712px; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 584.47px; height: 44.1975px; left: 93.624px'>a)<span class="ls0" style="letter-spacing: 0; position: relative; unicode-bidi: bidi-override"> <span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">zamówienia te udzielane <span class="_ _2"></span>są</span> w <span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">celu zatrud<span class="_ _2"></span>nienia osób po<span class="_ _2"></span>zbawionych wolno<span class="_ _2"></span>ś</span>ci, </span></div><div class="t m0 xa h2 y13 ff2 fs1 fc0 sc0 ls1 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0.24px; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 568.27px; height: 44.1975px; left: 93.624px'>b)<span class="ls0" style="letter-spacing: 0; position: relative; unicode-bidi: bidi-override"> warto<span class="ff5 ls7" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; letter-spacing: -0.1376px; position: relative; unicode-bidi: bidi-override">ść</span> <span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">zamówienia j<span class="_ _2"></span>est mniejsza niż</span> <span class="_ _2"></span>kwoty okre<span class="ff5">ś</span>lone <span class="_ _2"></span>w przep<span class="_ _2"></span>isach wydanych na podsta<span class="_ _2"></span>wie art. 11 ust. </span>8,<span class="ls0" style="letter-spacing: 0; position: relative; unicode-bidi: bidi-override"> </span></div><div class="t m0 xa h2 y14 ff2 fs1 fc0 sc0 ls5 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0.0712px; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 551.95px; height: 44.1975px; left: 93.624px'>c)<span class="ls0" style="letter-spacing: 0; position: relative; unicode-bidi: bidi-override"> <span class="_ _3"></span>zasadnicza <span class="_ _3"></span>cz<span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">ęść</span> <span class="_ _3"></span>d<span class="_ _2"></span>zia<span class="ff5">ł</span>alno<span class="ff5">ś</span>ci <span class="_ _3"></span>pr<span class="_ _2"></span>zywi<span class="ff5">ę</span>ziennego <span class="_ _3"></span>zak<span class="ff5">ł</span>adu <span class="_ _3"></span>pr<span class="_ _2"></span>acy <span class="_ _2"></span>do<span class="_ _2"></span>tyczy <span class="_ _3"></span>zada<span class="_ _2"></span><span class="ff5">ń</span> <span class="_ _3"></span>wykonywan<span class="_ _2"></span>ych <span class="_ _3"></span>na <span class="_ _2"></span>r<span class="_ _2"></span>zecz <span class="_ _3"></span>Mi<span class="_ _2"></span>n<span class="ls6" style="letter-spacing: -0.03552px; position: relative; unicode-bidi: bidi-override">i-</span></span></div><div class="t m0 xb h2 y15 ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 539.95px; height: 44.1975px; left: 107.66px'>stra Sprawiedliwo<span class="_ _2"></span><span class="ff5">ś</span>ci lub jednostek organizac<span class="_ _2"></span>yjnych S<span class="ff5">ł</span>u<span class="ff5">ż</span>b<span class="_ _2"></span>y Wi<span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">ę<span class="_ _2"></span></span>ziennej, </div><div class="t m0 xa h2 y16 ff2 fs1 fc0 sc0 ls1 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0.24px; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 523.75px; height: 44.1975px; left: 93.624px'>d)<span class="ls0" style="letter-spacing: 0; position: relative; unicode-bidi: bidi-override"> <span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">przedmiot zamówienia nale<span class="_ _2"></span>ż</span>y do zakresu dzia<span class="_ _2"></span><span class="ff5">ł</span>alno<span class="ff5">ś</span>ci pod<span class="_ _2"></span>stawowej przywi<span class="ff5">ę</span>zie<span class="_ _2"></span>nnego zak<span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">ład<span class="_ _2"></span>u pracy.”.<span class="_ _2"></span></span> </span></div><div class="t m0 x7 h3 y17 ff3 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, Bold, sans-serif; font-weight: bold; font-style: normal; line-height: 1.53418; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 500.11px; height: 45.617578px; left: 66.984px'>Art. 2. </div><div class="t m0 x8 h2 y18 ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 500.35px; height: 44.1975px; left: 97.464px'>1. <span class="_ _3"></span>Do<span class="_ _2"></span> <span class="_ _4"></span>post<span class="ff5">ę</span>powa<span class="ff5">ń</span> <span class="_ _3"></span>o<span class="_ _2"></span> <span class="ff5" style="font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; position: relative; unicode-bidi: bidi-override">udzielenie <span class="_ _4"></span>zamówienia <span class="_ _4"></span>publicz<span class="_ _2"></span>nego <span class="_ _4"></span>wszczę<span class="_ _2"></span></span>tych <span class="_ _4"></span>a niezako<span class="ff5">ń</span>czo<span class="_ _2"></span>nych <span class="_ _3"></span>p<span class="_ _2"></span>rzed <span class="_ _4"></span>dniem <span class="_ _4"></span>wej<span class="_ _2"></span><span class="ff5">ś</span>cia </div><div class="t m0 x0 h2 y19 ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 488.35px; height: 44.1975px; left: 51px'>w <span class="ff5">ż</span>ycie ustawy stos<span class="_ _2"></span>uje si<span class="ff5">ę</span> przep<span class="_ _2"></span>isy dotychczasowe.<span class="_ _2"></span> </div><div class="t m0 x7 h2 y1a ff5 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: ff5; line-height: 0.910645; font-style: normal; font-weight: normal; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 465.07px; height: 44.1975px; left: 66.984px'>2. <span class="_ _3"></span>Do<span class="_ _2"></span> <span class="_ _3"></span>umów <span class="_ _3"></span>w<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override"> </span>spra<span class="_ _2"></span>wach <span class="_ _3"></span>za<span class="_ _2"></span>mówień<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override"> <span class="_ _4"></span>publicznych <span class="_ _3"></span>za<span class="_ _2"></span>wartych <span class="_ _4"></span>przed <span class="_ _3"></span>dnie<span class="_ _2"></span>m <span class="_ _3"></span>wej<span class="_ _2"></span></span>ś<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">cia <span class="_ _4"></span>w </span>ż<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">ycie <span class="_ _3"></span>ustawy <span class="_ _4"></span>stosuje <span class="_ _4"></span>si</span>ę<span class="ff2" style="font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override"> <span class="_ _3"></span>p<span class="_ _2"></span>rzepisy </span></div><div class="t m0 x0 h2 y1b ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 452.95px; height: 44.1975px; left: 51px'>dotychczasow<span class="ls5" style="letter-spacing: 0.0712px; position: relative; unicode-bidi: bidi-override">e.</span> </div><div class="t m0 x7 h3 y1c ff3 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, Bold, sans-serif; font-weight: bold; font-style: normal; line-height: 1.53418; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 429.41px; height: 45.617578px; left: 66.984px'>Art. 3. </div><div class="t m0 x8 h2 y1d ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 429.65px; height: 44.1975px; left: 97.464px'>Ustawa wchodzi w <span class="ff5">ż</span>yc<span class="_ _2"></span>ie po up<span class="ff5">ł</span>y<span class="_ _2"></span>wie 14 dni od dnia og<span class="ff5">ł</span>osze<span class="_ _2"></span>nia. </div><div class="t m0 x0 h2 y1e ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 417.65px; height: 44.1975px; left: 51px'> </div><div class="t m0 xc h2 y1f ff2 fs1 fc0 sc0 ls0 ws0" style='position: absolute; white-space: pre; transform-origin: 0% 100%; -ms-transform-origin: 0% 100%; -webkit-transform-origin: 0% 100%; unicode-bidi: bidi-override; -moz-font-feature-settings: "liga" 0; font-family: Times New Roman, sans-serif; font-weight: normal; font-style: normal; line-height: 1.456055; visibility: visible; transform: matrix(0.25, 0, 0, 0.25, 0, 0); -ms-transform: matrix(0.25, 0, 0, 0.25, 0, 0); -webkit-transform: matrix(0.25, 0, 0, 0.25, 0, 0); letter-spacing: 0; text-shadow: -0.015em 0 transparent, 0 0.015em transparent, 0.015em 0 transparent, 0 -0.015em transparent; word-spacing: 0; color: rgb(0, 0, 0); font-size: 39.84px; bottom: 405.65px; height: 44.1975px; left: 331.39px'>Prezydent Rzeczypospolitej<span class="_ _2"></span> Polskiej: <span class="_ _2"></span><span class="ff6" style="font-family: Times New Roman, Italic, sans-serif; font-weight: normal; font-style: italic; line-height: 1.456055; visibility: visible; position: relative; unicode-bidi: bidi-override">B. Komorowski<span class="_ _2"></span> </span></div></div><div class="pi" data-data='{"ctm":[1.000000,0.000000,0.000000,1.000000,0.000000,0.000000]}' style="display: none"></div></div>
+</div>
+<div class="loading-indicator">
+<img alt="" src="data:image/png;base64,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"/>
+</div>
+</body>
+</html>

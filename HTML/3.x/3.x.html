@@ -1,0 +1,1588 @@
+<!DOCTYPE html>
+<!-- Created by pdf2htmlEX (https://github.com/coolwanglu/pdf2htmlex) -->
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8"/>
+<meta name="generator" content="pdf2htmlEX"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+<style type="text/css">
+/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab filetype=css: */
+/*! 
+ * Base CSS for pdf2htmlEX
+ * Copyright 2012,2013 Lu Wang <coolwanglu@gmail.com> 
+ * https://github.com/coolwanglu/pdf2htmlEX/blob/master/share/LICENSE
+ */
+/* Part 1: Web Page Layout: Free to modify, except for a few of them which are required by pdf2htmlEX.js, see the comments */
+#sidebar { /* Sidebar */
+  position:absolute;
+  top:0;
+  left:0;
+  bottom:0;
+  width:250px;
+  padding:0;
+  margin:0px;
+  overflow:auto;
+}
+#page-container { /* PDF container */
+  position:absolute; /* required for calculating relative positions of pages in pdf2htmlEX.js */
+  top:0;
+  left:0px;
+  margin:0; 
+  padding:0;
+  border:0; /* required for lazy page loading in pdf2htmlEX.js (page visibility test) */
+}
+@media screen {
+  /* for sidebar */
+  #sidebar.opened + #page-container { left:250px; }
+  #page-container {
+    /* `bottom' and `right' are required for lazy page loading in pdf2htmlEX.js (page visibility test)
+     * alternatively you may set width and height
+     */
+    bottom:0;
+    right:0;
+    overflow:auto;
+  }
+  .loading-indicator {
+    display:none;
+  }
+  .loading-indicator.active {
+    display:block;
+    position:absolute;
+    width:64px;
+    height:64px;
+    top:50%;
+    left:50%;
+    margin-top:-32px;
+    margin-left:-32px;
+  }
+  .loading-indicator img {
+    position:absolute;
+    top:0;
+    left:0;
+    bottom:0;
+    right:0;
+  }
+}
+@media print { 
+  @page { margin:0; }
+  html { margin:0; }
+  body { 
+    margin:0; 
+    -webkit-print-color-adjust:exact; /* enable printing background images for WebKit */
+  }
+  #sidebar { display:none; }
+  #page-container {
+    width:auto;
+    height:auto;
+    overflow:visible;
+    background-color:transparent;
+  }
+  .d { display:none; }
+}
+/* Part 2: Page Elements: Modify with caution
+ * The followings are base classes, some of which are meant to be override by PDF specific classes
+ * So do not increase the specificity (e.g. ".classname" -> "#page-container .classname")
+ */
+.pf { /* page */
+  position:relative;
+  background-color:white;
+  overflow: hidden;
+  margin:0; 
+  border:0; /* required by pdf2htmlEX.js for page visibility test */
+}
+.pc { /* content of a page */
+  position:absolute;
+  border:0;
+  padding:0;
+  margin:0;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  display:block;
+  /* set transform-origin for scaling */
+  transform-origin:0% 0%;
+  -ms-transform-origin:0% 0%;
+  -webkit-transform-origin:0% 0%;
+}
+.pc.opened { /* used by pdf2htmlEX.js, to show/hide pages */
+  display:block;
+}
+.bf { /* images that occupies the whole page */
+  position:absolute;
+  border:0;
+  margin:0;
+  top:0;
+  bottom:0;
+  width:100%;
+  height:100%;
+  -ms-user-select:none;
+  -moz-user-select:none;
+  -webkit-user-select:none;
+  user-select:none;
+}
+.bi { /* images that cover only a part of the page */
+  position:absolute;
+  border:0;
+  margin:0;
+  -ms-user-select:none;
+  -moz-user-select:none;
+  -webkit-user-select:none;
+  user-select:none;
+}
+@media print {
+  .pf {
+    margin:0;
+    box-shadow:none;
+    page-break-after:always;
+    page-break-inside:avoid;
+  }
+  @-moz-document url-prefix() {
+    /* fix page truncation for FireFox */
+    .pf {
+      overflow:visible;
+      border:1px solid #FFFFFF;
+    }
+    .pc {overflow:visible;}
+  }
+}
+.c { /* clip box */
+  position:absolute;
+  border:0;
+  padding:0;
+  margin:0;
+  overflow:hidden;
+  display:block;
+}
+.t { /* text line */
+  position:absolute;
+  white-space:pre;
+  font-size:1px;
+  transform-origin:0% 100%;
+  -ms-transform-origin:0% 100%;
+  -webkit-transform-origin:0% 100%;
+  unicode-bidi:bidi-override;/* For rtl languages, e.g. Hebrew, we don't want the default Unicode behaviour */
+  -moz-font-feature-settings:"liga" 0;/* We don't want Firefox to recognize ligatures */
+}
+.t:after { /* webkit #35443 */
+  content: '';
+}
+.t:before { /* Workaround Blink(up to 41)/Webkit bug of word-spacing with leading spaces (chromium #404444 and pdf2htmlEX #412) */
+  content: '';
+  display: inline-block;
+}
+.t span { /* text blocks within a line */
+  /* Blink(up to 41)/Webkit have bug with negative word-spacing and inline-block (pdf2htmlEX #416), so keep normal span inline. */
+  position:relative;
+  unicode-bidi:bidi-override; /* For rtl languages, e.g. Hebrew, we don't want the default Unicode behaviour */
+}
+._ { /* text shift */
+  /* Blink(up to 41)/Webkit have bug with inline element, continuous spaces and word-spacing. Workaround by inline-block. */
+  display: inline-block;
+  color: transparent;
+  z-index: -1;
+}
+/* selection background should not be opaque, for fallback mode */
+::selection{
+  background: rgba(127,255,255,0.4);
+}
+::-moz-selection{
+  background: rgba(127,255,255,0.4);
+}
+.pi { /* info for Javascript */
+  display:none;
+}
+.l { /* annotation links */
+}
+/* transparent color - WebKit */
+.d { /* css drawing */
+  position:absolute;
+  transform-origin:0% 100%;
+  -ms-transform-origin:0% 100%;
+  -webkit-transform-origin:0% 100%;
+}
+/* for the forms */
+.it {
+  border: none;
+  background-color: rgba(255, 255, 255, 0.0);
+}
+
+.ir:hover {
+  cursor: pointer;
+}
+
+/* Base CSS END */
+</style>
+<style type="text/css">
+/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab filetype=css: */
+/*! 
+ * Fancy styles for pdf2htmlEX
+ * Copyright 2012,2013 Lu Wang <coolwanglu@gmail.com> 
+ * https://github.com/coolwanglu/pdf2htmlEX/blob/master/share/LICENSE
+ */
+@keyframes fadein { from { opacity:0;} to { opacity:1;} }
+@-webkit-keyframes fadein { from { opacity:0;} to { opacity:1;} }
+@keyframes swing {
+  0%  { transform: rotate(0deg); }
+  10% { transform: rotate(0deg); }
+  90% { transform: rotate(720deg); }
+  100%{ transform: rotate(720deg); }
+}
+@-webkit-keyframes swing {
+  0%  { -webkit-transform: rotate(0deg); }
+  10% { -webkit-transform: rotate(0deg); }
+  90% { -webkit-transform: rotate(720deg); }
+  100%{ -webkit-transform: rotate(720deg); }
+}
+@media screen { 
+  #sidebar {
+    background-color:#2f3236;
+    /* modified from http://philbit.com/svgpatterns/#crossstripes */
+    background-image:url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjNDAzYzNmIj48L3JlY3Q+CjxwYXRoIGQ9Ik0wIDBMNCA0Wk00IDBMMCA0WiIgc3Ryb2tlLXdpZHRoPSIxIiBzdHJva2U9IiMxZTI5MmQiPjwvcGF0aD4KPC9zdmc+");
+  }
+  #outline {
+    font-family:Georgia,Times,"Times New Roman",serif;
+    font-size:13px;
+    margin:2em 1em;
+  }
+  #outline ul {
+    padding:0;
+  }
+  #outline li {
+    list-style-type:none;
+    margin:1em 0;
+  }
+  #outline li > ul {
+    margin-left: 1em;
+  }
+  #outline a,
+  #outline a:visited,
+  #outline a:hover,
+  #outline a:active {
+    line-height:1.2;
+    color:#e8e8e8;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    text-decoration:none;
+    display:block;
+    overflow:hidden;
+    outline:0;
+  }
+  #outline a:hover {
+    color:rgb(0,204,255);
+  }
+  #page-container {
+    background-color:#9e9e9e;
+    /* http://philbit.com/svgpatterns/#thinstripes */
+    background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1IiBoZWlnaHQ9IjUiPgo8cmVjdCB3aWR0aD0iNSIgaGVpZ2h0PSI1IiBmaWxsPSIjOWU5ZTllIj48L3JlY3Q+CjxwYXRoIGQ9Ik0wIDVMNSAwWk02IDRMNCA2Wk0tMSAxTDEgLTFaIiBzdHJva2U9IiM4ODgiIHN0cm9rZS13aWR0aD0iMSI+PC9wYXRoPgo8L3N2Zz4=");
+    -webkit-transition:left 500ms;
+    transition:left 500ms;
+  }
+  .pf {
+    margin: 13px auto;
+    box-shadow: 1px 1px 3px 1px #333;
+    /* Needed by IE to make box-shadow works * https://developer.mozilla.org/en-US/docs/Web/CSS/box-shadow */
+    border-collapse: separate;
+  }
+  .pc.opened { /* used by pdf2htmlEX.js, to show/hide pages */
+    -webkit-animation: fadein 100ms;
+    animation: fadein 100ms; 
+  }
+  .loading-indicator.active {
+    /* 
+     * use 0.01s instead of 0s,
+     * since YUI Compressor will change 0s to 0,
+     * which is not recognized by Firefox
+     */
+    -webkit-animation: swing 1.5s ease-in-out 0.01s infinite alternate none;
+    animation: swing 1.5s ease-in-out 0.01s infinite alternate none;
+  }
+  .checked {
+    background: no-repeat url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABYAAAAWCAYAAADEtGw7AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH3goQDSYgDiGofgAAAslJREFUOMvtlM9LFGEYx7/vvOPM6ywuuyPFihWFBUsdNnA6KLIh+QPx4KWExULdHQ/9A9EfUodYmATDYg/iRewQzklFWxcEBcGgEplDkDtI6sw4PzrIbrOuedBb9MALD7zv+3m+z4/3Bf7bZS2bzQIAcrmcMDExcTeXy10DAFVVAQDksgFUVZ1ljD3yfd+0LOuFpmnvVVW9GHhkZAQcxwkNDQ2FSCQyRMgJxnVdy7KstKZpn7nwha6urqqfTqfPBAJAuVymlNLXoigOhfd5nmeiKL5TVTV+lmIKwAOA7u5u6Lped2BsbOwjY6yf4zgQQkAIAcedaPR9H67r3uYBQFEUFItFtLe332lpaVkUBOHK3t5eRtf1DwAwODiIubk5DA8PM8bYW1EU+wEgCIJqsCAIQAiB7/u253k2BQDDMJBKpa4mEon5eDx+UxAESJL0uK2t7XosFlvSdf0QAEmlUnlRFJ9Waho2Qghc1/U9z3uWz+eX+Wr+lL6SZfleEAQIggA8z6OpqSknimIvYyybSCReMsZ6TislhCAIAti2Dc/zejVNWwCAavN8339j27YbTg0AGGM3WltbP4WhlRWq6Q/btrs1TVsYHx+vNgqKoqBUKn2NRqPFxsbGJzzP05puUlpt0ukyOI6z7zjOwNTU1OLo6CgmJyf/gA3DgKIoWF1d/cIY24/FYgOU0pp0z/Ityzo8Pj5OTk9PbwHA+vp6zWghDC+VSiuRSOQgGo32UErJ38CO42wdHR09LBQK3zKZDDY2NupmFmF4R0cHVlZWlmRZ/iVJUn9FeWWcCCE4ODjYtG27Z2Zm5juAOmgdGAB2d3cBADs7O8uSJN2SZfl+WKlpmpumaT6Yn58vn/fs6XmbhmHMNjc3tzDGFI7jYJrm5vb29sDa2trPC/9aiqJUy5pOp4f6+vqeJ5PJBAB0dnZe/t8NBajx/z37Df5OGX8d13xzAAAAAElFTkSuQmCC);
+  }
+}
+/* Fancy CSS END */
+</style>
+<style type="text/css">
+.ff0{font-family:sans-serif;visibility:hidden;}
+@font-face{font-family:ff1;src:url('data:application/font-woff;base64,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')format("woff");}.ff1{font-family:ff1;line-height:0.937500;font-style:normal;font-weight:normal;visibility:visible;}
+@font-face{font-family:ff2;src:url('data:application/font-woff;base64,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')format("woff");}.ff2{font-family:ff2;line-height:0.937500;font-style:normal;font-weight:normal;visibility:visible;}
+.m0{transform:matrix(0.250000,0.000000,0.000000,0.250000,0,0);-ms-transform:matrix(0.250000,0.000000,0.000000,0.250000,0,0);-webkit-transform:matrix(0.250000,0.000000,0.000000,0.250000,0,0);}
+.v0{vertical-align:0.000000px;}
+.ls0{letter-spacing:0.000000px;}
+.sc_{text-shadow:none;}
+.sc0{text-shadow:-0.015em 0 transparent,0 0.015em transparent,0.015em 0 transparent,0 -0.015em  transparent;}
+@media screen and (-webkit-min-device-pixel-ratio:0){
+.sc_{-webkit-text-stroke:0px transparent;}
+.sc0{-webkit-text-stroke:0.015em transparent;text-shadow:none;}
+}
+.ws0{word-spacing:0.000000px;}
+._2f{margin-left:-1008.390003px;}
+._27{margin-left:-1000.718746px;}
+._26{margin-left:-689.722859px;}
+._22{margin-left:-21.243131px;}
+._2a{margin-left:-17.382551px;}
+._24{margin-left:-13.198338px;}
+._28{margin-left:-5.261382px;}
+._21{margin-left:-1.115294px;}
+._0{width:1.702053px;}
+._2{width:5.769589px;}
+._10{width:8.265344px;}
+._4{width:19.772176px;}
+._1e{width:21.706153px;}
+._f{width:25.993257px;}
+._1{width:28.082668px;}
+._18{width:32.260490px;}
+._b{width:34.303749px;}
+._33{width:38.886629px;}
+._8{width:43.767322px;}
+._1d{width:45.701299px;}
+._1f{width:50.220328px;}
+._d{width:52.077814px;}
+._7{width:60.000948px;}
+._9{width:61.701997px;}
+._17{width:69.696445px;}
+._14{width:75.685602px;}
+._3{width:83.996094px;}
+._11{width:94.052783px;}
+._a{width:101.750173px;}
+._31{width:103.659031px;}
+._32{width:108.463483px;}
+._13{width:117.660571px;}
+._1a{width:119.001432px;}
+._35{width:132.501196px;}
+._34{width:139.791994px;}
+._20{width:143.745128px;}
+._5{width:157.682581px;}
+._15{width:165.677029px;}
+._16{width:167.740274px;}
+._19{width:189.672175px;}
+._6{width:197.730757px;}
+._12{width:213.667321px;}
+._23{width:214.957188px;}
+._e{width:237.662467px;}
+._29{width:245.096567px;}
+._1c{width:261.657613px;}
+._2b{width:272.450381px;}
+._1b{width:285.652759px;}
+._2d{width:310.772238px;}
+._30{width:321.934267px;}
+._c{width:323.127686px;}
+._2c{width:328.047700px;}
+._25{width:1203.127418px;}
+._2e{width:1406.246771px;}
+.fc0{color:rgb(0,0,0);}
+.fs1{font-size:47.990292px;}
+.fs2{font-size:53.109236px;}
+.fs0{font-size:85.102628px;}
+.y4{bottom:1.671269px;}
+.y22{bottom:1.917520px;}
+.y2a{bottom:49.862949px;}
+.y2b{bottom:51.301303px;}
+.y25{bottom:64.725943px;}
+.y26{bottom:65.205394px;}
+.y29{bottom:66.803566px;}
+.y28{bottom:67.762469px;}
+.y27{bottom:68.721371px;}
+.y24{bottom:85.821806px;}
+.y1c{bottom:112.031817px;}
+.y1b{bottom:128.013531px;}
+.y1a{bottom:143.995246px;}
+.y19{bottom:159.976960px;}
+.y18{bottom:175.958674px;}
+.y17{bottom:191.940389px;}
+.y16{bottom:207.922103px;}
+.y15{bottom:223.903817px;}
+.y14{bottom:239.885531px;}
+.y13{bottom:255.867246px;}
+.y12{bottom:271.848960px;}
+.y11{bottom:287.830674px;}
+.y10{bottom:303.812389px;}
+.yf{bottom:319.794103px;}
+.ye{bottom:335.775817px;}
+.yd{bottom:351.757531px;}
+.yc{bottom:367.739246px;}
+.yb{bottom:383.720960px;}
+.ya{bottom:399.702674px;}
+.y7{bottom:400.341943px;}
+.y9{bottom:415.684389px;}
+.y6{bottom:416.323657px;}
+.y8{bottom:431.666103px;}
+.y5{bottom:432.305371px;}
+.y23{bottom:453.241417px;}
+.y1f{bottom:474.337280px;}
+.y21{bottom:491.438000px;}
+.y20{bottom:493.355520px;}
+.y1d{bottom:512.213943px;}
+.y1e{bottom:512.693394px;}
+.y3{bottom:530.360000px;}
+.y0{bottom:536.825783px;}
+.y1{bottom:546.095177px;}
+.y2{bottom:547.054080px;}
+.h4{height:11.898000px;}
+.h6{height:12.922000px;}
+.h3{height:38.617188px;}
+.h2{height:39.741961px;}
+.h5{height:43.981086px;}
+.h1{height:70.475614px;}
+.h0{height:559.360000px;}
+.w2{width:32.633000px;}
+.w1{width:44.719000px;}
+.w0{width:793.760000px;}
+.x4{left:-1.146926px;}
+.x7{left:32.442880px;}
+.xb{left:34.360686px;}
+.x6{left:35.479406px;}
+.x1{left:41.232823px;}
+.xc{left:90.456503px;}
+.x0{left:206.004297px;}
+.xe{left:220.228021px;}
+.xd{left:277.282743px;}
+.x5{left:379.086263px;}
+.xf{left:396.026886px;}
+.x8{left:404.017737px;}
+.x10{left:458.994834px;}
+.xa{left:529.953646px;}
+.x11{left:570.866834px;}
+.x2{left:603.789166px;}
+.x3{left:619.000000px;}
+.x13{left:621.848503px;}
+.x12{left:623.766309px;}
+.x9{left:672.000000px;}
+@media print{
+.v0{vertical-align:0.000000pt;}
+.ls0{letter-spacing:0.000000pt;}
+.ws0{word-spacing:0.000000pt;}
+._2f{margin-left:-1344.520004pt;}
+._27{margin-left:-1334.291661pt;}
+._26{margin-left:-919.630479pt;}
+._22{margin-left:-28.324174pt;}
+._2a{margin-left:-23.176734pt;}
+._24{margin-left:-17.597784pt;}
+._28{margin-left:-7.015176pt;}
+._21{margin-left:-1.487059pt;}
+._0{width:2.269403pt;}
+._2{width:7.692786pt;}
+._10{width:11.020459pt;}
+._4{width:26.362901pt;}
+._1e{width:28.941538pt;}
+._f{width:34.657677pt;}
+._1{width:37.443557pt;}
+._18{width:43.013987pt;}
+._b{width:45.738333pt;}
+._33{width:51.848838pt;}
+._8{width:58.356429pt;}
+._1d{width:60.935066pt;}
+._1f{width:66.960438pt;}
+._d{width:69.437085pt;}
+._7{width:80.001264pt;}
+._9{width:82.269330pt;}
+._17{width:92.928594pt;}
+._14{width:100.914136pt;}
+._3{width:111.994792pt;}
+._11{width:125.403711pt;}
+._a{width:135.666898pt;}
+._31{width:138.212041pt;}
+._32{width:144.617977pt;}
+._13{width:156.880762pt;}
+._1a{width:158.668576pt;}
+._35{width:176.668262pt;}
+._34{width:186.389325pt;}
+._20{width:191.660171pt;}
+._5{width:210.243442pt;}
+._15{width:220.902706pt;}
+._16{width:223.653699pt;}
+._19{width:252.896234pt;}
+._6{width:263.641010pt;}
+._12{width:284.889762pt;}
+._23{width:286.609584pt;}
+._e{width:316.883290pt;}
+._29{width:326.795423pt;}
+._1c{width:348.876818pt;}
+._2b{width:363.267174pt;}
+._1b{width:380.870346pt;}
+._2d{width:414.362985pt;}
+._30{width:429.245689pt;}
+._c{width:430.836915pt;}
+._2c{width:437.396933pt;}
+._25{width:1604.169890pt;}
+._2e{width:1874.995694pt;}
+.fs1{font-size:63.987056pt;}
+.fs2{font-size:70.812315pt;}
+.fs0{font-size:113.470171pt;}
+.y4{bottom:2.228359pt;}
+.y22{bottom:2.556693pt;}
+.y2a{bottom:66.483932pt;}
+.y2b{bottom:68.401737pt;}
+.y25{bottom:86.301257pt;}
+.y26{bottom:86.940525pt;}
+.y29{bottom:89.071422pt;}
+.y28{bottom:90.349958pt;}
+.y27{bottom:91.628495pt;}
+.y24{bottom:114.429075pt;}
+.y1c{bottom:149.375756pt;}
+.y1b{bottom:170.684708pt;}
+.y1a{bottom:191.993661pt;}
+.y19{bottom:213.302613pt;}
+.y18{bottom:234.611565pt;}
+.y17{bottom:255.920519pt;}
+.y16{bottom:277.229471pt;}
+.y15{bottom:298.538423pt;}
+.y14{bottom:319.847375pt;}
+.y13{bottom:341.156328pt;}
+.y12{bottom:362.465280pt;}
+.y11{bottom:383.774232pt;}
+.y10{bottom:405.083185pt;}
+.yf{bottom:426.392137pt;}
+.ye{bottom:447.701089pt;}
+.yd{bottom:469.010041pt;}
+.yc{bottom:490.318995pt;}
+.yb{bottom:511.627947pt;}
+.ya{bottom:532.936899pt;}
+.y7{bottom:533.789257pt;}
+.y9{bottom:554.245852pt;}
+.y6{bottom:555.098209pt;}
+.y8{bottom:575.554804pt;}
+.y5{bottom:576.407161pt;}
+.y23{bottom:604.321889pt;}
+.y1f{bottom:632.449706pt;}
+.y21{bottom:655.250667pt;}
+.y20{bottom:657.807360pt;}
+.y1d{bottom:682.951924pt;}
+.y1e{bottom:683.591192pt;}
+.y3{bottom:707.146667pt;}
+.y0{bottom:715.767711pt;}
+.y1{bottom:728.126903pt;}
+.y2{bottom:729.405440pt;}
+.h4{height:15.864000pt;}
+.h6{height:17.229333pt;}
+.h3{height:51.489584pt;}
+.h2{height:52.989281pt;}
+.h5{height:58.641448pt;}
+.h1{height:93.967485pt;}
+.h0{height:745.813333pt;}
+.w2{width:43.510667pt;}
+.w1{width:59.625333pt;}
+.w0{width:1058.346667pt;}
+.x4{left:-1.529235pt;}
+.x7{left:43.257173pt;}
+.xb{left:45.814248pt;}
+.x6{left:47.305875pt;}
+.x1{left:54.977097pt;}
+.xc{left:120.608671pt;}
+.x0{left:274.672396pt;}
+.xe{left:293.637361pt;}
+.xd{left:369.710324pt;}
+.x5{left:505.448351pt;}
+.xf{left:528.035848pt;}
+.x8{left:538.690316pt;}
+.x10{left:611.993112pt;}
+.xa{left:706.604861pt;}
+.x11{left:761.155779pt;}
+.x2{left:805.052221pt;}
+.x3{left:825.333333pt;}
+.x13{left:829.131337pt;}
+.x12{left:831.688412pt;}
+.x9{left:896.000000pt;}
+}
+</style>
+<script>
+/*
+ Copyright 2012 Mozilla Foundation 
+ Copyright 2013 Lu Wang <coolwanglu@gmail.com>
+ Apachine License Version 2.0 
+*/
+(function(){function b(a,b,e,f){var c=(a.className||"").split(/\s+/g);""===c[0]&&c.shift();var d=c.indexOf(b);0>d&&e&&c.push(b);0<=d&&f&&c.splice(d,1);a.className=c.join(" ");return 0<=d}if(!("classList"in document.createElement("div"))){var e={add:function(a){b(this.element,a,!0,!1)},contains:function(a){return b(this.element,a,!1,!1)},remove:function(a){b(this.element,a,!1,!0)},toggle:function(a){b(this.element,a,!0,!0)}};Object.defineProperty(HTMLElement.prototype,"classList",{get:function(){if(this._classList)return this._classList;
+var a=Object.create(e,{element:{value:this,writable:!1,enumerable:!0}});Object.defineProperty(this,"_classList",{value:a,writable:!1,enumerable:!1});return a},enumerable:!0})}})();
+</script>
+<script>
+/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab filetype=javascript : */
+/** 
+ * @license pdf2htmlEX.js: Core UI functions for pdf2htmlEX 
+ * Copyright 2012,2013 Lu Wang <coolwanglu@gmail.com> and other contributors 
+ * https://github.com/coolwanglu/pdf2htmlEX/blob/master/share/LICENSE 
+ */
+
+/*
+ * Attention:
+ * This files is to be optimized by closure-compiler, 
+ * so pay attention to the forms of property names:
+ *
+ * string/bracket form is safe, won't be optimized:
+ * var obj={ 'a':'b' }; obj['a'] = 'b';
+ * name/dot form will be optimized, the name is likely to be modified:
+ * var obj={ a:'b' }; obj.a = 'b';
+ *
+ * Either form can be used for internal objects, 
+ * but must be consistent for each one respectively.
+ *
+ * string/bracket form must be used for external objects
+ * e.g. DEFAULT_CONFIG, object stored in page-data
+ * property names are part of the `protocol` in these cases.
+ *
+ */
+
+'use strict';
+
+var pdf2htmlEX = window['pdf2htmlEX'] = window['pdf2htmlEX'] || {};
+
+/** 
+ * @const 
+ * @struct
+ */
+var CSS_CLASS_NAMES = {
+  page_frame       : 'pf',
+  page_content_box : 'pc',
+  page_data        : 'pi',
+  background_image : 'bi',
+  link             : 'l',
+  input_radio      : 'ir',
+  __dummy__        : 'no comma'
+};
+
+/** 
+ * configurations of Viewer
+ * @const 
+ * @dict
+ */
+var DEFAULT_CONFIG = {
+  // id of the element to put the pages in
+  'container_id' : 'page-container',
+  // id of the element for sidebar (to open and close)
+  'sidebar_id' : 'sidebar',
+  // id of the element for outline
+  'outline_id' : 'outline',
+  // class for the loading indicator
+  'loading_indicator_cls' : 'loading-indicator',
+  // How many page shall we preload that are below the last visible page
+  'preload_pages' : 3,
+  // how many ms should we wait before actually rendering the pages and after a scroll event
+  'render_timeout' : 100,
+  // zoom ratio step for each zoom in/out event
+  'scale_step' : 0.9,
+  // register global key handler, allowing navigation by keyboard
+  'key_handler' : true,
+  // register hashchange handler, navigate to the location specified by the hash
+  'hashchange_handler' : true,
+  // register view history handler, allowing going back to the previous location
+  'view_history_handler' : true,
+
+  '__dummy__'        : 'no comma'
+};
+
+/** @const */
+var EPS = 1e-6;
+
+/************************************/
+/* utility function */
+/**
+ * @param{Array.<number>} ctm
+ */
+function invert(ctm) {
+  var det = ctm[0] * ctm[3] - ctm[1] * ctm[2];
+  return [ ctm[3] / det
+          ,-ctm[1] / det
+          ,-ctm[2] / det
+          ,ctm[0] / det
+          ,(ctm[2] * ctm[5] - ctm[3] * ctm[4]) / det
+          ,(ctm[1] * ctm[4] - ctm[0] * ctm[5]) / det
+        ];
+};
+/**
+ * @param{Array.<number>} ctm
+ * @param{Array.<number>} pos
+ */
+function transform(ctm, pos) {
+  return [ctm[0] * pos[0] + ctm[2] * pos[1] + ctm[4]
+         ,ctm[1] * pos[0] + ctm[3] * pos[1] + ctm[5]];
+};
+
+/**
+ * @param{Element} ele
+ */
+function get_page_number(ele) {
+  return parseInt(ele.getAttribute('data-page-no'), 16);
+};
+
+/**
+ * @param{NodeList} eles
+ */
+function disable_dragstart(eles) {
+  for (var i = 0, l = eles.length; i < l; ++i) {
+    eles[i].addEventListener('dragstart', function() {
+      return false;
+    }, false);
+  }
+};
+
+/**
+ * @param{...Object} var_args
+ */
+function clone_and_extend_objs(var_args) {
+  var result_obj = {};
+  for (var i = 0, l = arguments.length; i < l; ++i) {
+    var cur_obj = arguments[i];
+    for (var k in cur_obj) {
+      if (cur_obj.hasOwnProperty(k)) {
+        result_obj[k] = cur_obj[k];
+      }
+    }
+  }
+  return result_obj;
+};
+
+/** 
+ * @constructor 
+ * @param{Element} page The element for the page
+ */
+function Page(page) {
+  if (!page) return;
+
+  this.loaded = false;
+  this.shown = false;
+  this.page = page; // page frame element
+
+  this.num = get_page_number(page);
+
+  // page size
+  // Need to make rescale work when page_content_box is not loaded, yet
+  this.original_height = page.clientHeight;     
+  this.original_width = page.clientWidth;
+
+  // content box
+  var content_box = page.getElementsByClassName(CSS_CLASS_NAMES.page_content_box)[0];
+
+  // if page is loaded
+  if (content_box) {
+    this.content_box = content_box;
+    /*
+     * scale ratios
+     *
+     * original_scale : the first one
+     * cur_scale : currently using
+     */
+    this.original_scale = this.cur_scale = this.original_height / content_box.clientHeight;
+    this.page_data = JSON.parse(page.getElementsByClassName(CSS_CLASS_NAMES.page_data)[0].getAttribute('data-data'));
+
+    this.ctm = this.page_data['ctm'];
+    this.ictm = invert(this.ctm);
+
+    this.loaded = true;
+  }
+};
+Page.prototype = {
+  /* hide & show are for contents, the page frame is still there */
+  hide : function(){
+    if (this.loaded && this.shown) {
+      this.content_box.classList.remove('opened');
+      this.shown = false;
+    }
+  },
+  show : function(){
+    if (this.loaded && !this.shown) {
+      this.content_box.classList.add('opened');
+      this.shown = true;
+    }
+  },
+  /**
+   * @param{number} ratio
+   */
+  rescale : function(ratio) {
+    if (ratio === 0) {
+      // reset scale
+      this.cur_scale = this.original_scale;
+    } else {
+      this.cur_scale = ratio;
+    }
+
+    // scale the content box
+    if (this.loaded) {
+      var cbs = this.content_box.style;
+      cbs.msTransform = cbs.webkitTransform = cbs.transform = 'scale('+this.cur_scale.toFixed(3)+')';
+    }
+
+    // stretch the page frame to hold the place
+    {
+      var ps = this.page.style;
+      ps.height = (this.original_height * this.cur_scale) + 'px';
+      ps.width = (this.original_width * this.cur_scale) + 'px';
+    }
+  },
+  /*
+   * return the coordinate of the top-left corner of container
+   * in our coordinate system
+   * assuming that p.parentNode === p.offsetParent
+   */
+  view_position : function () {
+    var p = this.page;
+    var c = p.parentNode;
+    return [c.scrollLeft - p.offsetLeft - p.clientLeft
+           ,c.scrollTop - p.offsetTop - p.clientTop];
+  },
+  height : function () {
+    return this.page.clientHeight;
+  },
+  width : function () {
+    return this.page.clientWidth;
+  }
+};
+
+/** 
+ * @constructor
+ * @param{Object=} config
+ */
+function Viewer(config) {
+  this.config = clone_and_extend_objs(DEFAULT_CONFIG, (arguments.length > 0 ? config : {}));
+  this.pages_loading = [];
+  this.init_before_loading_content();
+
+  var self = this;
+  document.addEventListener('DOMContentLoaded', function(){
+    self.init_after_loading_content();
+  }, false);
+};
+
+Viewer.prototype = {
+  scale : 1,
+  /* 
+   * index of the active page (the one with largest visible area)
+   * which estimates the page currently being viewed
+   */
+  cur_page_idx : 0,
+
+  /*
+   * index of the first visible page
+   * used when determining current view
+   */
+  first_page_idx : 0,
+
+  init_before_loading_content : function() {
+    /* hide all pages before loading, will reveal only visible ones later */
+    this.pre_hide_pages();
+  },
+
+  initialize_radio_button : function() {
+    var elements = document.getElementsByClassName(CSS_CLASS_NAMES.input_radio);
+    
+    for(var i = 0; i < elements.length; i++) {
+      var r = elements[i];
+
+      r.addEventListener('click', function() {
+        this.classList.toggle("checked");
+      });
+    }
+  },
+
+  init_after_loading_content : function() {
+    this.sidebar = document.getElementById(this.config['sidebar_id']);
+    this.outline = document.getElementById(this.config['outline_id']);
+    this.container = document.getElementById(this.config['container_id']);
+    this.loading_indicator = document.getElementsByClassName(this.config['loading_indicator_cls'])[0];
+
+    
+    {
+      // Open the outline if nonempty
+      var empty = true;
+      var nodes = this.outline.childNodes;
+      for (var i = 0, l = nodes.length; i < l; ++i) {
+        var cur_node = nodes[i];
+        if (cur_node.nodeName.toLowerCase() === 'ul') {
+          empty = false;
+          break;
+        }
+      }
+      if (!empty)
+        this.sidebar.classList.add('opened');
+    }
+
+    this.find_pages();
+    // do nothing if there's nothing
+    if(this.pages.length == 0) return;
+
+    // disable dragging of background images
+    disable_dragstart(document.getElementsByClassName(CSS_CLASS_NAMES.background_image));
+
+    if (this.config['key_handler'])
+      this.register_key_handler();
+
+    var self = this;
+
+    if (this.config['hashchange_handler']) {
+      window.addEventListener('hashchange', function(e) {
+        self.navigate_to_dest(document.location.hash.substring(1));
+      }, false);
+    }
+
+    if (this.config['view_history_handler']) {
+      window.addEventListener('popstate', function(e) {
+        if(e.state) self.navigate_to_dest(e.state);
+      }, false);
+    }
+
+    // register schedule rendering
+    // renew old schedules since scroll() may be called frequently
+    this.container.addEventListener('scroll', function() {
+      self.update_page_idx();
+      self.schedule_render(true);
+    }, false);
+
+    // handle links
+    [this.container, this.outline].forEach(function(ele) {
+      ele.addEventListener('click', self.link_handler.bind(self), false);
+    });
+
+    this.initialize_radio_button();
+    this.render();
+  },
+
+  /*
+   * set up this.pages and this.page_map
+   * pages is an array holding all the Page objects
+   * page-Map maps an original page number (in PDF) to the corresponding index in page
+   */
+  find_pages : function() {
+    var new_pages = [];
+    var new_page_map = {};
+    var nodes = this.container.childNodes;
+    for (var i = 0, l = nodes.length; i < l; ++i) {
+      var cur_node = nodes[i];
+      if ((cur_node.nodeType === Node.ELEMENT_NODE)
+          && cur_node.classList.contains(CSS_CLASS_NAMES.page_frame)) {
+        var p = new Page(cur_node);
+        new_pages.push(p);
+        new_page_map[p.num] = new_pages.length - 1;
+      }
+    }
+    this.pages = new_pages;
+    this.page_map = new_page_map;
+  },
+
+  /**
+   * @param{number} idx
+   * @param{number=} pages_to_preload
+   * @param{function(Page)=} callback
+   *
+   * TODO: remove callback -> promise ?
+   */
+  load_page : function(idx, pages_to_preload, callback) {
+    var pages = this.pages;
+    if (idx >= pages.length)
+      return;  // Page does not exist
+
+    var cur_page = pages[idx];
+    if (cur_page.loaded)
+      return;  // Page is loaded
+
+    if (this.pages_loading[idx])
+      return;  // Page is already loading
+
+    var cur_page_ele = cur_page.page;
+    var url = cur_page_ele.getAttribute('data-page-url');
+    if (url) {
+      this.pages_loading[idx] = true;       // set semaphore
+
+      // add a copy of the loading indicator if not already present
+      var new_loading_indicator = cur_page_ele.getElementsByClassName(this.config['loading_indicator_cls'])[0];
+      if (typeof new_loading_indicator === 'undefined'){
+        new_loading_indicator = this.loading_indicator.cloneNode(true);
+        new_loading_indicator.classList.add('active');
+        cur_page_ele.appendChild(new_loading_indicator);
+      }
+
+      // load data
+      {
+        var self = this;
+        var _idx = idx;
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.onload = function(){
+          if (xhr.status === 200 || xhr.status === 0) {
+            // find the page element in the data
+            var div = document.createElement('div');
+            div.innerHTML = xhr.responseText;
+
+            var new_page = null;
+            var nodes = div.childNodes;
+            for (var i = 0, l = nodes.length; i < l; ++i) {
+              var cur_node = nodes[i];
+              if ((cur_node.nodeType === Node.ELEMENT_NODE)
+                  && cur_node.classList.contains(CSS_CLASS_NAMES.page_frame)) {
+                new_page = cur_node;
+                break;
+              }
+            }
+
+            // replace the old page with loaded data
+            // the loading indicator on this page should also be destroyed
+            var p = self.pages[_idx];
+            self.container.replaceChild(new_page, p.page);
+            p = new Page(new_page);
+            self.pages[_idx] = p;
+
+            p.hide();
+            p.rescale(self.scale);
+
+            // disable background image dragging
+            disable_dragstart(new_page.getElementsByClassName(CSS_CLASS_NAMES.background_image));
+
+            self.schedule_render(false);
+
+            if (callback){ callback(p); }
+          }
+
+          // Reset loading token
+          delete self.pages_loading[_idx];
+        };
+        xhr.send(null);
+      }
+    }
+    // Concurrent prefetch of the next pages
+    if (pages_to_preload === undefined)
+      pages_to_preload = this.config['preload_pages'];
+
+    if (--pages_to_preload > 0) {
+      var self = this;
+      setTimeout(function() {
+        self.load_page(idx+1, pages_to_preload);
+      },0);
+    }
+  },
+
+  /*
+   * Hide all pages that have no 'opened' class
+   * The 'opened' class will be added to visible pages by JavaScript
+   * We cannot add this in the default CSS because JavaScript may be disabled
+   */
+  pre_hide_pages : function() {
+    /* pages might have not been loaded yet, so add a CSS rule */
+    var s = '@media screen{.'+CSS_CLASS_NAMES.page_content_box+'{display:none;}}';
+    var n = document.createElement('style');
+    if (n.styleSheet) {
+      n.styleSheet.cssText = s;
+    } else {
+      n.appendChild(document.createTextNode(s));
+    }
+    document.head.appendChild(n);
+  },
+
+  /*
+   * show visible pages and hide invisible pages
+   */
+  render : function () {
+    var container = this.container;
+    /* 
+     * show the pages that are 'nearly' visible -- it's right above or below the container
+     *
+     * all the y values are in the all-page element's coordinate system
+     */
+    var container_min_y = container.scrollTop;
+    var container_height = container.clientHeight;
+    var container_max_y = container_min_y + container_height;
+    var visible_min_y = container_min_y - container_height;
+    var visible_max_y = container_max_y + container_height;
+
+    var cur_page_fully_visible = false;
+    var cur_page_idx = this.cur_page_idx;
+    var max_visible_page_idx = cur_page_idx;
+    var max_visible_ratio = 0.0;
+
+    var pl = this.pages;
+    for (var i = 0, l = pl.length; i < l; ++i) {
+      var cur_page = pl[i];
+      var cur_page_ele = cur_page.page;
+      var page_min_y = cur_page_ele.offsetTop + cur_page_ele.clientTop;
+      var page_height = cur_page_ele.clientHeight;
+      var page_max_y = page_min_y + page_height;
+      if ((page_min_y <= visible_max_y) && (page_max_y >= visible_min_y))
+      {
+        // cur_page is 'nearly' visible, show it or load it
+        if (cur_page.loaded) {
+          cur_page.show();
+        } else {
+          this.load_page(i);
+        }
+      } else {
+        cur_page.hide();
+      }
+    }
+  },
+  /*
+   * update cur_page_idx and first_page_idx
+   * normally called upon scrolling
+   */
+  update_page_idx: function () {
+    var pages = this.pages;
+    var pages_len = pages.length;
+    // there is no chance that cur_page_idx or first_page_idx is modified
+    if (pages_len < 2) return;
+   
+    var container = this.container;
+    var container_min_y = container.scrollTop;
+    var container_max_y = container_min_y + container.clientHeight;
+
+    // binary search for the first page
+    // whose bottom border is below the top border of the container
+    var first_idx = -1;
+    var last_idx = pages_len;
+    var rest_len = last_idx - first_idx;
+    // TODO: use current first_page_idx as a hint?
+    while(rest_len > 1) {
+      var idx = first_idx + Math.floor(rest_len / 2);
+      var cur_page_ele = pages[idx].page;
+      if (cur_page_ele.offsetTop + cur_page_ele.clientTop + cur_page_ele.clientHeight >= container_min_y) {
+        last_idx = idx;
+      } else {
+        first_idx = idx;
+      }
+      rest_len = last_idx - first_idx;
+    }
+    
+    /*
+     * with malformed settings it is possible that no page is visible, e.g.
+     * - the container is to thin, which lies in the margin between two pages
+     * - all pages are completely above or below the container
+     * but we just assume that they won't happen.
+     */
+    this.first_page_idx = last_idx;
+
+    // find the page with largest visible area
+    var cur_page_idx = this.cur_page_idx;
+    var max_visible_page_idx = cur_page_idx;
+    var max_visible_ratio = 0.0;
+
+    for(var i = last_idx; i < pages_len; ++i) {
+      var cur_page_ele = pages[i].page;
+      var page_min_y = cur_page_ele.offsetTop + cur_page_ele.clientTop;
+      var page_height = cur_page_ele.clientHeight;
+      var page_max_y = page_min_y + page_height;
+      if (page_min_y > container_max_y) break;
+
+      // check the visible fraction of the page
+      var page_visible_ratio = ( Math.min(container_max_y, page_max_y) 
+                                 - Math.max(container_min_y, page_min_y)
+                               ) / page_height;
+
+      // stay with the current page if it is still fully visible
+      if ((i === cur_page_idx) && (Math.abs(page_visible_ratio - 1.0) <= EPS)) {
+        max_visible_page_idx = cur_page_idx;
+        break;
+      }
+
+      if (page_visible_ratio > max_visible_ratio) {
+        max_visible_ratio = page_visible_ratio;
+        max_visible_page_idx = i;
+      }
+    }
+
+    this.cur_page_idx = max_visible_page_idx;
+  },
+
+  /**
+   * @param{boolean} renew renew the existing schedule instead of using the old one
+   */
+  schedule_render : function(renew) {
+    if (this.render_timer !== undefined) {
+      if (!renew) return;
+      clearTimeout(this.render_timer);
+    }
+
+    var self = this;
+    this.render_timer = setTimeout(function () {
+      /*
+       * render() may trigger load_page(), which may in turn trigger another render()
+       * so delete render_timer first
+       */
+      delete self.render_timer;
+      self.render();
+    }, this.config['render_timeout']);
+  },
+
+  /*
+   * Handling key events, zooming, scrolling etc.
+   */
+  register_key_handler: function () {
+    /* 
+     * When user try to zoom in/out using ctrl + +/- or mouse wheel
+     * handle this and prevent the default behaviours
+     *
+     * Code credit to PDF.js
+     */
+    var self = this;
+
+    // Firefox specific event, so that we can prevent browser from zooming
+    window.addEventListener('DOMMouseScroll', function(e) {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        var container = self.container;
+        var rect = container.getBoundingClientRect();
+        var fixed_point = [e.clientX - rect['left'] - container.clientLeft
+                          ,e.clientY - rect['top'] - container.clientTop];
+        self.rescale(Math.pow(self.config['scale_step'], e.detail), true, fixed_point);
+      }
+    }, false);
+
+    window.addEventListener('keydown', function(e) {
+      var handled = false;
+      /*
+      var cmd = (e.ctrlKey ? 1 : 0)
+                | (e.altKey ? 2 : 0)
+                | (e.shiftKey ? 4 : 0)
+                | (e.metaKey ? 8 : 0)
+                ;
+                */
+      var with_ctrl = e.ctrlKey || e.metaKey;
+      var with_alt = e.altKey;
+      switch (e.keyCode) {
+        case 61: // FF/Mac '='
+        case 107: // FF '+' and '='
+        case 187: // Chrome '+'
+          if (with_ctrl){
+            self.rescale(1.0 / self.config['scale_step'], true);
+            handled = true;
+          }
+          break;
+        case 173: // FF/Mac '-'
+        case 109: // FF '-'
+        case 189: // Chrome '-'
+          if (with_ctrl){
+            self.rescale(self.config['scale_step'], true);
+            handled = true;
+          }
+          break;
+        case 48: // '0'
+          if (with_ctrl){
+            self.rescale(0, false);
+            handled = true;
+          }
+          break;
+        case 33: // Page UP:
+          if (with_alt) { // alt-pageup    -> scroll one page up
+            self.scroll_to(self.cur_page_idx - 1);
+          } else { // pageup        -> scroll one screen up
+            self.container.scrollTop -= self.container.clientHeight;
+          }
+          handled = true;
+          break;
+        case 34: // Page DOWN
+          if (with_alt) { // alt-pagedown  -> scroll one page down
+            self.scroll_to(self.cur_page_idx + 1);
+          } else { // pagedown      -> scroll one screen down
+            self.container.scrollTop += self.container.clientHeight;
+          }
+          handled = true;
+          break;
+        case 35: // End
+          self.container.scrollTop = self.container.scrollHeight;
+          handled = true;
+          break;
+        case 36: // Home
+          self.container.scrollTop = 0;
+          handled = true;
+          break;
+      }
+      if (handled) {
+        e.preventDefault();
+        return;
+      }
+    }, false);
+  },
+
+  /**
+   * @param{number} ratio
+   * @param{boolean} is_relative
+   * @param{Array.<number>=} fixed_point preserve the position (relative to the top-left corner of the viewer) after rescaling
+   */
+  rescale : function (ratio, is_relative, fixed_point) {
+    var old_scale = this.scale;
+    var new_scale = old_scale;
+    // set new scale
+    if (ratio === 0) {
+      new_scale = 1;
+      is_relative = false;
+    } else if (is_relative)
+      new_scale *= ratio;
+    else
+      new_scale = ratio;
+
+    this.scale = new_scale;
+
+    if (!fixed_point)
+      fixed_point = [0,0];
+
+    // translate fixed_point to the coordinate system of all pages
+    var container = this.container;
+    fixed_point[0] += container.scrollLeft;
+    fixed_point[1] += container.scrollTop;
+
+    // find the visible page that contains the fixed point
+    // if the fixed point lies between two pages (including their borders), it's contained in the first one
+    var pl = this.pages;
+    var pl_len = pl.length;
+    for (var i = this.first_page_idx; i < pl_len; ++i) {
+      var p = pl[i].page;
+      if (p.offsetTop + p.clientTop >= fixed_point[1])
+        break;
+    }
+    var fixed_point_page_idx = i - 1;
+
+    // determine the new scroll position
+    // each-value consists of two parts, one inside the page, which is affected by rescaling,
+    // the other is outside, (e.g. borders and margins), which is not affected
+
+    // if the fixed_point is above the first page, use the first page as the reference
+    if (fixed_point_page_idx < 0) 
+      fixed_point_page_idx = 0;
+
+    var fp_p = pl[fixed_point_page_idx].page;
+    var fp_p_width = fp_p.clientWidth;
+    var fp_p_height = fp_p.clientHeight;
+
+    var fp_x_ref = fp_p.offsetLeft + fp_p.clientLeft;
+    var fp_x_inside = fixed_point[0] - fp_x_ref;
+    if (fp_x_inside < 0)
+      fp_x_inside = 0;
+    else if (fp_x_inside > fp_p_width)
+      fp_x_inside = fp_p_width;
+
+    var fp_y_ref = fp_p.offsetTop + fp_p.clientTop;
+    var fp_y_inside = fixed_point[1] - fp_y_ref;
+    if (fp_y_inside < 0)
+      fp_y_inside = 0;
+    else if (fp_y_inside > fp_p_height)
+      fp_y_inside = fp_p_height;
+
+    // Rescale pages
+    for (var i = 0; i < pl_len; ++i) 
+        pl[i].rescale(new_scale);  
+
+    // Correct container scroll to keep view aligned while zooming
+    container.scrollLeft += fp_x_inside / old_scale * new_scale + fp_p.offsetLeft + fp_p.clientLeft - fp_x_inside - fp_x_ref;
+    container.scrollTop += fp_y_inside / old_scale * new_scale + fp_p.offsetTop + fp_p.clientTop - fp_y_inside - fp_y_ref;
+
+    // some pages' visibility may be toggled, wait for next render()
+    // renew old schedules since rescale() may be called frequently
+    this.schedule_render(true);
+  },
+
+  fit_width : function () {
+    var page_idx = this.cur_page_idx;
+    this.rescale(this.container.clientWidth / this.pages[page_idx].width(), true);
+    this.scroll_to(page_idx);
+  },
+
+  fit_height : function () {
+    var page_idx = this.cur_page_idx;
+    this.rescale(this.container.clientHeight / this.pages[page_idx].height(), true);
+    this.scroll_to(page_idx);
+  },
+  /**
+   * @param{Node} ele
+   */
+  get_containing_page : function(ele) {
+    /* get the page obj containing obj */
+    while(ele) {
+      if ((ele.nodeType === Node.ELEMENT_NODE)
+          && ele.classList.contains(CSS_CLASS_NAMES.page_frame)) {
+        /*
+         * Get original page number and map it to index of pages
+         * TODO: store the index on the dom element
+         */
+        var pn = get_page_number(/** @type{Element} */(ele));
+        var pm = this.page_map;
+        return (pn in pm) ? this.pages[pm[pn]] : null;
+      }
+      ele = ele.parentNode;
+    }
+    return null;
+  },
+
+  /**
+   * @param{Event} e
+   */
+  link_handler : function (e) {
+    var target = /** @type{Node} */(e.target);
+    var detail_str = /** @type{string} */ (target.getAttribute('data-dest-detail'));
+    if (!detail_str) return;
+
+    if (this.config['view_history_handler']) {
+      try {
+        var cur_hash = this.get_current_view_hash();
+        window.history.replaceState(cur_hash, '', '#' + cur_hash);
+        window.history.pushState(detail_str, '', '#' + detail_str);
+      } catch(ex) { }
+    }
+    this.navigate_to_dest(detail_str, this.get_containing_page(target));
+    e.preventDefault();
+  },
+
+  /**
+   * @param{string} detail_str may come from user provided hashtag, need sanitzing
+   * @param{Page=} src_page page containing the source event (e.g. link)
+   */
+  navigate_to_dest : function(detail_str, src_page) {
+    try {
+      var detail = JSON.parse(detail_str);
+    } catch(e) {
+      return;
+    }
+
+    if(!(detail instanceof Array)) return;
+
+    var target_page_no = detail[0];
+    var page_map = this.page_map;
+    if (!(target_page_no in page_map)) return;
+    var target_page_idx = page_map[target_page_no];
+    var target_page = this.pages[target_page_idx];
+
+    for (var i = 2, l = detail.length; i < l; ++i) {
+      var d = detail[i];
+      if(!((d === null) || (typeof d === 'number')))
+        return;
+    }
+
+    while(detail.length < 6)
+      detail.push(null);
+
+    // cur_page might be undefined, e.g. from Outline
+    var cur_page = src_page || this.pages[this.cur_page_idx];
+
+    var cur_pos = cur_page.view_position();
+    cur_pos = transform(cur_page.ictm, [cur_pos[0], cur_page.height()-cur_pos[1]]);
+
+    var zoom = this.scale;
+    var pos = [0,0];
+    var upside_down = true;
+    var ok = false;
+
+    // position specified in `detail` are in the raw coordinate system of the page (unscaled)
+    var scale = this.scale;
+    // TODO: fitb*
+    // TODO: BBox
+    switch(detail[1]) {
+      case 'XYZ':
+        pos = [ (detail[2] === null) ? cur_pos[0] : detail[2] * scale
+              , (detail[3] === null) ? cur_pos[1] : detail[3] * scale ];
+        zoom = detail[4];
+        if ((zoom === null) || (zoom === 0))
+          zoom = this.scale;
+        ok = true;
+        break;
+      case 'Fit':
+      case 'FitB':
+        pos = [0,0];
+        ok = true;
+        break;
+      case 'FitH':
+      case 'FitBH':
+        pos = [0, (detail[2] === null) ? cur_pos[1] : detail[2] * scale];
+        ok = true;
+        break;
+      case 'FitV':
+      case 'FitBV':
+        pos = [(detail[2] === null) ? cur_pos[0] : detail[2] * scale, 0];
+        ok = true;
+        break;
+      case 'FitR':
+        /* locate the top-left corner of the rectangle */
+        // TODO
+        pos = [detail[2] * scale, detail[5] * scale];
+        upside_down = false;
+        ok = true;
+        break;
+      default:
+        break;
+    }
+
+    if (!ok) return;
+
+    this.rescale(zoom, false);
+
+    var self = this;
+    /**
+     * page should of type Page 
+     * @param{Page} page 
+     */
+    var transform_and_scroll = function(page) {
+      pos = transform(page.ctm, pos);
+      if (upside_down) {
+        pos[1] = page.height() - pos[1];
+      }
+      self.scroll_to(target_page_idx, pos);
+    };
+
+    if (target_page.loaded) {
+      transform_and_scroll(target_page);
+    } else {
+      // TODO: scroll_to may finish before load_page
+
+      // Scroll to the exact position once loaded.
+      this.load_page(target_page_idx, undefined, transform_and_scroll);
+
+      // In the meantime page gets loaded, scroll approximately position for maximum responsiveness.
+      this.scroll_to(target_page_idx);
+    }
+  }, 
+
+  /**
+   * @param{number} page_idx
+   * @param{Array.<number>=} pos [x,y] where (0,0) is the top-left corner
+   */
+  scroll_to : function(page_idx, pos) {
+    var pl = this.pages;
+    if ((page_idx < 0) || (page_idx >= pl.length)) return;
+    var target_page = pl[page_idx];
+    var cur_target_pos = target_page.view_position();
+
+    if (pos === undefined)
+      pos = [0,0];
+
+    var container = this.container;
+    container.scrollLeft += pos[0] - cur_target_pos[0];
+    container.scrollTop += pos[1] - cur_target_pos[1];
+  },
+
+  /**
+   * generate the hash for the current view
+   */
+  get_current_view_hash : function() {
+    var detail = [];
+    var cur_page = this.pages[this.cur_page_idx];
+
+    detail.push(cur_page.num);
+    detail.push('XYZ');
+
+    var cur_pos = cur_page.view_position();
+    cur_pos = transform(cur_page.ictm, [cur_pos[0], cur_page.height()-cur_pos[1]]);
+    detail.push(cur_pos[0] / this.scale);
+    detail.push(cur_pos[1] / this.scale);
+    
+    detail.push(this.scale);
+
+    return JSON.stringify(detail);
+  }
+};
+
+// export pdf2htmlEX.Viewer
+pdf2htmlEX['Viewer'] = Viewer;
+</script>
+<script>
+try{
+pdf2htmlEX.defaultViewer = new pdf2htmlEX.Viewer({});
+}catch(e){}
+</script>
+<title></title>
+</head>
+<body>
+<div id="sidebar">
+<div id="outline">
+</div>
+</div>
+<div id="page-container">
+<div id="pf1" class="pf w0 h0" data-page-no="1"><div class="pc pc1 w0 h0"><div class="t m0 x0 h1 y0 ff1 fs0 fc0 sc0 ls0 ws0">广西壮<span class="_ _0"></span>族自治<span class="_ _0"></span>区人民<span class="_ _0"></span>医院检<span class="_ _0"></span>验科报<span class="_ _0"></span>告单</div><div class="t m0 x1 h2 y1 ff1 fs1 fc0 sc0 ls0 ws0">血细胞分析<span class="ff2">(</span>不含网织<span class="ff2">)</span></div><div class="t m0 x2 h3 y2 ff2 fs1 fc0 sc0 ls0 ws0">1115<span class="_ _0"></span>10220<span class="_ _0"></span>6</div><div class="c x3 y3 w1 h4"><div class="t m0 x4 h2 y4 ff1 fs1 fc0 sc0 ls0 ws0">门诊急诊</div></div><div class="t m0 x5 h2 y5 ff2 fs1 fc0 sc0 ls0 ws0">22<span class="_ _1"> </span><span class="ff1">血小板体积分布宽度</span>(PD<span class="_ _0"></span>W)<span class="_ _2"> </span>9.1<span class="_ _3"> </span><span class="ff1">↓<span class="_ _4"> </span></span>15-1<span class="_ _0"></span>8<span class="_ _5"> </span>%</div><div class="t m0 x5 h2 y6 ff2 fs1 fc0 sc0 ls0 ws0">23<span class="_ _1"> </span><span class="ff1">血小板比积</span>(PC<span class="_ _0"></span>T)<span class="_ _6"> </span>0.22<span class="_ _7"> </span> <span class="_ _8"> </span>0.15<span class="_ _0"></span>-0.29<span class="_ _9"> </span>%</div><div class="t m0 x5 h2 y7 ff2 fs1 fc0 sc0 ls0 ws0">24<span class="_ _1"> </span><span class="ff1">大血小板比率</span>(P-<span class="_ _0"></span>LCR)<span class="_ _a"> </span>17.3<span class="_ _0"></span>0<span class="_ _b"> </span> <span class="_ _c"> </span>%</div><div class="t m0 x6 h2 y8 ff2 fs1 fc0 sc0 ls0 ws0">1<span class="_ _d"> </span>*<span class="ff1">白细胞计数</span>(W<span class="_ _0"></span>BC)<span class="_ _e"> </span>12.6<span class="_ _0"></span>0<span class="_ _f"> </span><span class="ff1">↑<span class="_ _10"> </span></span>3.6-<span class="_ _0"></span>10<span class="_ _11"> </span>10E9<span class="_ _0"></span>/L</div><div class="t m0 x6 h2 y9 ff2 fs1 fc0 sc0 ls0 ws0">2<span class="_ _d"> </span><span class="ff1">粒细胞比率</span>(NE<span class="_ _0"></span>UTR)<span class="_ _12"> </span>91.1<span class="_ _d"> </span><span class="ff1">↑<span class="_ _10"> </span></span>50-7<span class="_ _0"></span>0<span class="_ _13"> </span>%</div><div class="t m0 x6 h2 ya ff2 fs1 fc0 sc0 ls0 ws0">3<span class="_ _d"> </span><span class="ff1">淋巴细胞比率</span>(LY<span class="_ _0"></span>R)<span class="_ _12"> </span>6.7<span class="_ _14"> </span><span class="ff1">↓<span class="_ _10"> </span></span>20-4<span class="_ _0"></span>0<span class="_ _13"> </span>%</div><div class="t m0 x6 h2 yb ff2 fs1 fc0 sc0 ls0 ws0">4<span class="_ _d"> </span><span class="ff1">单核细胞比率</span>(MO<span class="_ _0"></span>NOR)<span class="_ _15"> </span>1.7<span class="_ _14"> </span><span class="ff1">↓<span class="_ _10"> </span></span>3-8<span class="_ _16"> </span>%</div><div class="t m0 x6 h2 yc ff2 fs1 fc0 sc0 ls0 ws0">5<span class="_ _d"> </span><span class="ff1">嗜酸性粒细胞比率</span>(EO<span class="_ _0"></span>SR)<span class="_ _11"> </span>0.3<span class="_ _14"> </span><span class="ff1">↓<span class="_ _10"> </span></span>0.5-<span class="_ _0"></span>5<span class="_ _13"> </span>%</div><div class="t m0 x6 h2 yd ff2 fs1 fc0 sc0 ls0 ws0">6<span class="_ _d"> </span><span class="ff1">嗜碱性粒细胞比率</span>(BA<span class="_ _0"></span>SOR)<span class="_ _17"> </span>0.2<span class="_ _14"> </span> <span class="_ _18"> </span>0-2<span class="_ _16"> </span>%</div><div class="t m0 x6 h2 ye ff2 fs1 fc0 sc0 ls0 ws0">7<span class="_ _d"> </span><span class="ff1">粒细胞计数</span>(NE<span class="_ _0"></span>UT)<span class="_ _e"> </span>11.4<span class="_ _0"></span>8<span class="_ _f"> </span><span class="ff1">↑<span class="_ _10"> </span></span>1.7-<span class="_ _0"></span>7<span class="_ _13"> </span>10E<span class="_ _0"></span>9/L</div><div class="t m0 x6 h2 yf ff2 fs1 fc0 sc0 ls0 ws0">8<span class="_ _d"> </span><span class="ff1">淋巴细胞计数</span>(LY<span class="_ _0"></span>)<span class="_ _e"> </span>0.84<span class="_ _d"> </span> <span class="_ _18"> </span>0.7-<span class="_ _0"></span>4<span class="_ _13"> </span>10E9<span class="_ _0"></span>/L</div><div class="t m0 x6 h2 y10 ff2 fs1 fc0 sc0 ls0 ws0">9<span class="_ _d"> </span><span class="ff1">嗜酸性粒细胞计数</span>(EO<span class="_ _0"></span>S)<span class="_ _13"> </span>0.04<span class="_ _d"> </span> <span class="_ _18"> </span>0-0.<span class="_ _0"></span>8<span class="_ _13"> </span>10E9<span class="_ _0"></span>/L</div><div class="t m0 x6 h2 y11 ff2 fs1 fc0 sc0 ls0 ws0">10<span class="_ _1"> </span><span class="ff1">单核细胞计数</span>(MO<span class="_ _0"></span>NO)<span class="_ _19"> </span>0.22<span class="_ _d"> </span> <span class="_ _18"> </span>0.1-<span class="_ _0"></span>0.8<span class="_ _17"> </span>10E9<span class="_ _0"></span>/L</div><div class="t m0 x6 h2 y12 ff2 fs1 fc0 sc0 ls0 ws0">11<span class="_ _1"> </span><span class="ff1">嗜碱性粒细胞计数</span>(BA<span class="_ _0"></span>SO)<span class="_ _11"> </span>0.02<span class="_ _d"> </span> <span class="_ _18"> </span>0-0.2<span class="_ _1a"> </span>10E9<span class="_ _0"></span>/L</div><div class="t m0 x6 h2 y13 ff2 fs1 fc0 sc0 ls0 ws0">12<span class="_ _1"> </span>*<span class="ff1">红细胞计数</span>(R<span class="_ _0"></span>BC)<span class="_ _e"> </span>4.76<span class="_ _d"> </span> <span class="_ _18"> </span>3.5-<span class="_ _0"></span>5.8<span class="_ _17"> </span>10E1<span class="_ _0"></span>2/L</div><div class="t m0 x6 h2 y14 ff2 fs1 fc0 sc0 ls0 ws0">13<span class="_ _1"> </span>*<span class="ff1">血红蛋白</span>(H<span class="_ _0"></span>GB)<span class="_ _1b"> </span>133<span class="_ _14"> </span> <span class="_ _18"> </span>105-<span class="_ _0"></span>160<span class="_ _17"> </span>g/L</div><div class="t m0 x6 h2 y15 ff2 fs1 fc0 sc0 ls0 ws0">14<span class="_ _1"> </span><span class="ff1">红细胞压积</span>(HC<span class="_ _0"></span>T)<span class="_ _1c"> </span>41.0<span class="_ _d"> </span> <span class="_ _18"> </span>34-4<span class="_ _0"></span>5<span class="_ _13"> </span>%</div><div class="t m0 x6 h2 y16 ff2 fs1 fc0 sc0 ls0 ws0">15<span class="_ _1"> </span><span class="ff1">平均红细胞体积</span>(MC<span class="_ _0"></span>V)<span class="_ _15"> </span>86.1<span class="_ _d"> </span> <span class="_ _18"> </span>80-9<span class="_ _0"></span>9<span class="_ _13"> </span>fL</div><div class="t m0 x6 h2 y17 ff2 fs1 fc0 sc0 ls0 ws0">16<span class="_ _1"> </span><span class="ff1">平均</span>RBC<span class="_ _0"></span><span class="ff1">血红蛋白含量</span>(MCH)<span class="_ _1d"> </span>27.9<span class="_ _d"> </span> <span class="_ _18"> </span>26-3<span class="_ _0"></span>2<span class="_ _13"> </span>pg</div><div class="t m0 x6 h2 y18 ff2 fs1 fc0 sc0 ls0 ws0">17<span class="_ _1"> </span><span class="ff1">平均</span>RBC<span class="_ _0"></span><span class="ff1">血红蛋白浓度</span>(MCHC)<span class="_ _1e"> </span>324<span class="_ _14"> </span> <span class="_ _18"> </span>320-<span class="_ _0"></span>360<span class="_ _17"> </span>g/L</div><div class="t m0 x6 h2 y19 ff2 fs1 fc0 sc0 ls0 ws0">18<span class="_ _1"> </span>RBC<span class="ff1">体积分布宽度</span>C<span class="_ _0"></span>V(RDW<span class="_ _0"></span>-CV)<span class="_ _4"> </span>14.<span class="_ _0"></span>0<span class="_ _1f"> </span> <span class="_ _18"> </span>11-1<span class="_ _0"></span>5<span class="_ _13"> </span>%</div><div class="t m0 x6 h2 y1a ff2 fs1 fc0 sc0 ls0 ws0">19<span class="_ _1"> </span>RBC<span class="ff1">体积分布宽度</span>S<span class="_ _0"></span>D(RDW<span class="_ _0"></span>-SD)<span class="_ _4"> </span>44.<span class="_ _0"></span>3<span class="_ _1f"> </span> <span class="_ _18"> </span>35-6<span class="_ _0"></span>5<span class="_ _13"> </span>%</div><div class="t m0 x6 h2 y1b ff2 fs1 fc0 sc0 ls0 ws0">20<span class="_ _1"> </span>*<span class="ff1">血小板计数</span>(P<span class="_ _0"></span>LT)<span class="_ _e"> </span>249<span class="_ _14"> </span> <span class="_ _18"> </span>100-<span class="_ _0"></span>400<span class="_ _17"> </span>10E<span class="_ _0"></span>9/L</div><div class="t m0 x6 h2 y1c ff2 fs1 fc0 sc0 ls0 ws0">21<span class="_ _1"> </span><span class="ff1">平均血小板体积</span>(MP<span class="_ _0"></span>V)<span class="_ _15"> </span>9.0<span class="_ _14"> </span> <span class="_ _18"> </span>6-13<span class="_ _20"> </span>fL</div><div class="t m0 x7 h5 y1d ff1 fs2 fc0 sc0 ls0 ws0">姓<span class="_ _21"></span><span class="ff2">  <span class="_ _0"></span><span class="ff1">名：<span class="_ _22"></span>刘<span class="_ _21"></span>英<span class="_ _21"></span>连<span class="_ _23"> </span>病<span class="_ _21"></span><span class="ff2"> <span class="ff1">员</span> <span class="ff1">号：<span class="_ _24"></span><span class="ff2">00<span class="_ _0"></span>01<span class="_ _0"></span>4<span class="_ _0"></span>94<span class="_ _0"></span>2<span class="_ _25"> </span>20<span class="_ _0"></span>15<span class="_ _0"></span>0<span class="_ _0"></span>80<span class="_ _0"></span>1G<span class="_ _0"></span>01<span class="_ _0"></span>30<span class="_ _0"></span>30<span class="_ _0"></span>1<span class="_ _26"></span><span class="ff1">样<span class="_ _21"></span>本<span class="_ _21"></span>编<span class="_ _21"></span>号<span class="_ _21"></span>：<span class="_ _27"></span>标<span class="_ _21"></span>本<span class="_ _21"></span>种<span class="_ _21"></span>类<span class="_ _21"></span>：</span></span></span></span></span></span></div><div class="t m0 x8 h5 y1e ff1 fs2 fc0 sc0 ls0 ws0">静<span class="_ _21"></span>脉<span class="_ _21"></span>血</div><div class="t m0 x7 h5 y1f ff1 fs2 fc0 sc0 ls0 ws0">年<span class="_ _21"></span><span class="ff2">  <span class="_ _0"></span><span class="ff1">龄：<span class="_ _28"></span><span class="ff2">73<span class="_ _0"></span><span class="ff1">岁<span class="_ _29"> </span>科<span class="_ _21"></span><span class="ff2">  <span class="_ _0"></span>  <span class="_ _0"></span><span class="ff1">别：<span class="_ _2a"></span>急<span class="_ _21"></span>诊<span class="_ _21"></span>科<span class="_ _2b"> </span>送<span class="_ _21"></span>检<span class="_ _21"></span>医<span class="_ _21"></span>生<span class="_ _21"></span>：齐玉<span class="_ _21"></span>晶<span class="_ _2c"> </span>医<span class="_ _21"></span>生<span class="_ _21"></span>说<span class="_ _21"></span>明<span class="_ _21"></span>：</span></span></span></span></span></span></div><div class="t m0 x7 h5 y20 ff1 fs2 fc0 sc0 ls0 ws0">性<span class="_ _21"></span><span class="ff2">  <span class="_ _0"></span><span class="ff1">别：<span class="_ _2a"></span>女<span class="_ _2d"> </span>床<span class="_ _21"></span><span class="ff2"> <span class="_ _0"></span>  <span class="_ _0"></span> <span class="ff1">号：<span class="_ _2e"> </span>急<span class="_ _21"></span>性<span class="_ _21"></span>胃<span class="_ _21"></span>肠<span class="_ _21"></span>炎<span class="_ _21"></span>？</span></span></span></span></div><div class="c x9 y21 w2 h6"><div class="t m0 x4 h5 y22 ff1 fs2 fc0 sc0 ls0 ws0">胃<span class="_ _21"></span>溃<span class="_ _21"></span>疡</div></div><div class="t m0 xa h5 y20 ff1 fs2 fc0 sc0 ls0 ws0">临<span class="_ _21"></span>床<span class="_ _21"></span>诊<span class="_ _21"></span>断<span class="_ _21"></span>：<span class="_ _2f"></span>收<span class="_ _21"></span>费<span class="_ _21"></span>类<span class="_ _21"></span>别<span class="_ _21"></span>：</div><div class="t m0 xb h2 y23 ff2 fs1 fc0 sc0 ls0 ws0">No<span class="_ _1f"> </span><span class="ff1">项</span> <span class="_ _0"></span>     <span class="_ _0"></span>  <span class="ff1">目<span class="_ _30"> </span>结果<span class="_ _31"> </span>参考值<span class="_ _32"> </span>单位<span class="_ _1a"> </span></span>No<span class="_ _33"> </span><span class="ff1">项</span>    <span class="_ _0"></span>     <span class="_ _0"></span><span class="ff1">目<span class="_ _29"> </span>结果<span class="_ _34"> </span>参考值<span class="_ _35"> </span>单位</span></div><div class="t m0 xb h5 y24 ff1 fs2 fc0 sc0 ls0 ws0">备<span class="ff2"> <span class="_ _0"></span> <span class="_ _0"></span></span>注：</div><div class="t m0 x7 h2 y25 ff1 fs1 fc0 sc0 ls0 ws0">采样日期：</div><div class="t m0 xc h3 y26 ff2 fs1 fc0 sc0 ls0 ws0">15-0<span class="_ _0"></span>7-31 <span class="_ _0"></span>23:58</div><div class="t m0 xd h3 y27 ff2 fs1 fc0 sc0 ls0 ws0">2015<span class="_ _0"></span>-08-0<span class="_ _0"></span>1 00:0<span class="_ _0"></span>8</div><div class="t m0 xe h2 y28 ff1 fs1 fc0 sc0 ls0 ws0">送检日期：</div><div class="t m0 xf h2 y29 ff1 fs1 fc0 sc0 ls0 ws0">报告日期：</div><div class="t m0 x10 h3 y28 ff2 fs1 fc0 sc0 ls0 ws0">2015<span class="_ _0"></span>-08-0<span class="_ _0"></span>1 00:2<span class="_ _0"></span>9</div><div class="t m0 xb h5 y2a ff1 fs2 fc0 sc0 ls0 ws0">注<span class="ff2">:<span class="_ _0"></span></span>本报<span class="_ _0"></span>告只对<span class="_ _0"></span>此<span class="_ _21"></span>份标本<span class="_ _0"></span>负责<span class="ff2">,<span class="_ _0"></span></span>结果<span class="_ _0"></span>仅供临床参考<span class="_ _0"></span>。。</div><div class="t m0 x11 h2 y25 ff1 fs1 fc0 sc0 ls0 ws0">检验者：</div><div class="t m0 x12 h2 y29 ff1 fs1 fc0 sc0 ls0 ws0">陆晓旭</div><div class="t m0 x11 h5 y2a ff1 fs2 fc0 sc0 ls0 ws0">审<span class="_ _21"></span>核<span class="_ _21"></span>者<span class="_ _21"></span>：</div><div class="t m0 x13 h5 y2b ff1 fs2 fc0 sc0 ls0 ws0">陆<span class="_ _21"></span>晓<span class="_ _21"></span>旭</div></div><div class="pi" data-data='{"ctm":[1.000000,0.000000,0.000000,1.000000,0.000000,0.000000]}'></div></div>
+</div>
+<div class="loading-indicator">
+<img alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAABGdBTUEAALGPC/xhBQAAAwBQTFRFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAwAACAEBDAIDFgQFHwUIKggLMggPOgsQ/w1x/Q5v/w5w9w9ryhBT+xBsWhAbuhFKUhEXUhEXrhJEuxJKwBJN1xJY8hJn/xJsyhNRoxM+shNF8BNkZxMfXBMZ2xRZlxQ34BRb8BRk3hVarBVA7RZh8RZi4RZa/xZqkRcw9Rdjihgsqxg99BhibBkc5hla9xli9BlgaRoapho55xpZ/hpm8xpfchsd+Rtibxsc9htgexwichwdehwh/hxk9Rxedx0fhh4igB4idx4eeR4fhR8kfR8g/h9h9R9bdSAb9iBb7yFX/yJfpCMwgyQf8iVW/iVd+iVZ9iVWoCYsmycjhice/ihb/Sla+ylX/SpYmisl/StYjisfkiwg/ixX7CxN9yxS/S1W/i1W6y1M9y1Q7S5M6S5K+i5S6C9I/i9U+jBQ7jFK/jFStTIo+DJO9zNM7TRH+DRM/jRQ8jVJ/jZO8DhF9DhH9jlH+TlI/jpL8jpE8zpF8jtD9DxE7zw9/z1I9j1A9D5C+D5D4D8ywD8nwD8n90A/8kA8/0BGxEApv0El7kM5+ENA+UNAykMp7kQ1+0RB+EQ+7EQ2/0VCxUUl6kU0zkUp9UY8/kZByUkj1Eoo6Usw9Uw3300p500t3U8p91Ez11Ij4VIo81Mv+FMz+VM0/FM19FQw/lQ19VYv/lU1/1cz7Fgo/1gy8Fkp9lor4loi/1sw8l0o9l4o/l4t6l8i8mAl+WEn8mEk52Id9WMk9GMk/mMp+GUj72Qg8mQh92Uj/mUn+GYi7WYd+GYj6mYc62cb92ch8Gce7mcd6Wcb6mcb+mgi/mgl/Gsg+2sg+Wog/moj/msi/mwh/m0g/m8f/nEd/3Ic/3Mb/3Qb/3Ua/3Ya/3YZ/3cZ/3cY/3gY/0VC/0NE/0JE/w5wl4XsJQAAAPx0Uk5TAAAAAAAAAAAAAAAAAAAAAAABCQsNDxMWGRwhJioyOkBLT1VTUP77/vK99zRpPkVmsbbB7f5nYabkJy5kX8HeXaG/11H+W89Xn8JqTMuQcplC/op1x2GZhV2I/IV+HFRXgVSN+4N7n0T5m5RC+KN/mBaX9/qp+pv7mZr83EX8/N9+5Nip1fyt5f0RQ3rQr/zo/cq3sXr9xrzB6hf+De13DLi8RBT+wLM+7fTIDfh5Hf6yJMx0/bDPOXI1K85xrs5q8fT47f3q/v7L/uhkrP3lYf2ryZ9eit2o/aOUmKf92ILHfXNfYmZ3a9L9ycvG/f38+vr5+vz8/Pv7+ff36M+a+AAAAAFiS0dEQP7ZXNgAAAj0SURBVFjDnZf/W1J5Fsf9D3guiYYwKqglg1hqplKjpdSojYizbD05iz5kTlqjqYwW2tPkt83M1DIm5UuomZmkW3bVrmupiCY1mCNKrpvYM7VlTyjlZuM2Y+7nXsBK0XX28xM8957X53zO55z3OdcGt/zi7Azbhftfy2b5R+IwFms7z/RbGvI15w8DdkVHsVi+EGa/ZZ1bYMDqAIe+TRabNv02OiqK5b8Z/em7zs3NbQO0GoD0+0wB94Ac/DqQEI0SdobIOV98Pg8AfmtWAxBnZWYK0vYfkh7ixsVhhMDdgZs2zc/Pu9HsVwc4DgiCNG5WQoJ/sLeXF8070IeFEdzpJh+l0pUB+YBwRJDttS3cheJKp9MZDMZmD5r7+vl1HiAI0qDtgRG8lQAlBfnH0/Miqa47kvcnccEK2/1NCIdJ96Ctc/fwjfAGwXDbugKgsLggPy+csiOZmyb4LiEOjQMIhH/YFg4TINxMKxxaCmi8eLFaLJVeyi3N2eu8OTctMzM9O2fjtsjIbX5ewf4gIQK/5gR4uGP27i5LAdKyGons7IVzRaVV1Jjc/PzjP4TucHEirbUjEOyITvQNNH+A2MLj0NYDAM1x6RGk5e9raiQSkSzR+XRRcUFOoguJ8NE2kN2XfoEgsUN46DFoDlZi0DA3Bwiyg9TzpaUnE6kk/OL7xgdE+KBOgKSkrbUCuHJ1bu697KDrGZEoL5yMt5YyPN9glo9viu96GtEKQFEO/34tg1omEVVRidBy5bUdJXi7R4SIxWJzPi1cYwMMV1HO10gqnQnLFygPEDxSaPPuYPlEiD8B3IIrqDevvq9ytl1JPjhhrMBdIe7zaHG5oZn5sQf7YirgJqrV/aWHLPnPCQYis2U9RthjawHIFa0NnZcpZbCMTbRmnszN3mz5EwREJmX7JrQ6nU0eyFvbtX2dyi42/yqcQf40fnIsUsfSBIJIixhId7OCA7aA8nR3sTfF4EHn3d5elaoeONBEXXR/hWdzgZvHMrMjXWwtVczxZ3nwdm76fBvJfAvtajUgKPfxO1VHHRY5f6PkJBCBwrQcSor8WFIQFgl5RFQw/RuWjwveDGjr16jVvT3UBmXPYgdw0jPFOyCgEem5fw06BMqTu/+AGMeJjtrA8aGRFhJpqEejvlvl2qeqJC2J3+nSRHwhWlyZXvTkrLSEhAQuRxoW5RXA9aZ/yESUkMrv7IpffIWXbhSW5jkVlhQUpHuxHdbQt0b6ZcWF4vdHB9MjWNs5cgsAatd0szvu9rguSmFxWUVZSUmM9ERocbarPfoQ4nETNtofiIvzDIpCFUJqzgPFYI+rVt3k9MH2ys0bOFw1qG+R6DDelnmuYAcGF38vyHKxE++M28BBu47PbrE5kR62UB6qzSFQyBtvVZfDdVdwF2tO7jsrugCK93Rxoi1mf+QHtgNOyo3bxgsEis9i+a3BAA8GWlwHNRlYmTdqkQ64DobhHwNuzl0mVctKGKhS5jGBfW5mdjgJAs0nbiP9KyCVUSyaAwAoHvSPXGYMDgjRGCq0qgykE64/WAffrP5bPVl6ToJeZFFJDMCkp+/BUjUpwYvORdXWi2IL8uDR2NjIdaYJAOy7UpnlqlqHW3A5v66CgbsoQb3PLT2MB1mR+BkWiqTvACAuOnivEwFn82TixYuxsWYTQN6u7hI6Qg3KWvtLZ6/xy2E+rrqmCHhfiIZCznMyZVqSAAV4u4Dj4GwmpiYBoYXxeKSWgLvfpRaCl6qV4EbK4MMNcKVt9TVZjCWnIcjcgAV+9K+yXLCY2TwyTk1OvrjD0I4027f2DAgdwSaNPZ0xQGFq+SAQDXPvMe/zPBeyRFokiPwyLdRUODZtozpA6GeMj9xxbB24l4Eo5Di5VtUMdajqHYHOwbK5SrAVz/mDUoqzj+wJSfsiwJzKvJhh3aQxdmjsnqdicGCgu097X3G/t7tDq2wiN5bD1zIOL1aZY8fTXZMFAtPwguYBHvl5Soj0j8VDSEb9vQGN5hbS06tUqapIuBuHDzoTCItS/ER+DiUpU5C964Ootk3cZj58cdsOhycz4pvvXGf23W3q7I4HkoMnLOkR0qKCUDo6h2TtWgAoXvYz/jXZH4O1MQIzltiuro0N/8x6fygsLmYHoVOEIItnATyZNg636V8Mm3eDcK2avzMh6/bSM6V5lNwCjLAVMlfjozevB5mjk7qF0aNR1x27TGsoLC3dx88uwOYQIGsY4PmvM2+mnyO6qVGL9sq1GqF1By6dE+VRThQX54RG7qESTUdAfns7M/PGwHs29WrI8t6DO6lWW4z8vES0l1+St5dCsl9j6Uzjs7OzMzP/fnbKYNQjlhcZ1lt0dYWkinJG9JeFtLIAAEGPIHqjoW3F0fpKRU0e9aJI9Cfo4/beNmwwGPTv3hhSnk4bf16JcOXH3yvY/CIJ0LlP5gO8A5nsHDs8PZryy7TRgCxnLq+ug2V7PS+AWeiCvZUx75RhZjzl+bRxYkhuPf4NmH3Z3PsaSQXfCkBhePuf8ZSneuOrfyBLEYrqchXcxPYEkwwg1Cyc4RPA7Oyvo6cQw2ujbhRRLDLXdimVVVQgUjBGqFy7FND2G7iMtwaE90xvnHr18BekUSHHhoe21vY+Za+yZZ9zR13d5crKs7JrslTiUsATFDD79t2zU8xhvRHIlP7xI61W+3CwX6NRd7WkUmK0SuVBMpHo5PnncCcrR3g+a1rTL5+mMJ/f1r1C1XZkZASITEttPCWmoUel6ja1PwiCrATxKfDgXfNR9lH9zMtxJIAZe7QZrOu1wng2hTGk7UHnkI/b39IgDv8kdCXb4aFnoDKmDaNPEITJZDKY/KEObR84BTqH1JNX+mLBOxCxk7W9ezvz5vVr4yvdxMvHj/X94BT11+8BxN3eJvJqPvvAfaKE6fpa3eQkFohaJyJzGJ1D6kmr+m78J7iMGV28oz0ygRHuUG1R6e3TqIXEVQHQ+9Cz0cYFRAYQzMMXLz6Vgl8VoO0lsMeMoPGpqUmdZfiCbPGr/PRF4i0je6PBaBSS/vjHN35hK+QnoTP+//t6Ny+Cw5qVHv8XF+mWyZITVTkAAAAASUVORK5CYII="/>
+</div>
+</body>
+</html>

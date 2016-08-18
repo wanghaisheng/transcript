@@ -29,6 +29,9 @@ import re
 import glob
 import os.path
 import sys
+import pynliner
+from pynliner import Pynliner
+import chardet
 
 DEBUG = 0
 MIN_SPAN_SIZE = 8 # remove spans less then this width (in px)
@@ -357,11 +360,27 @@ def semanticize(doc_path='test.html'):
     f.write(s)
     f.close()
 
+def css_inline_html(doc_path):
+    f_contents = open(doc_path,'rb').read()
+    p = Pynliner()
+    inline_html = p.from_string(f_contents).run()
+    inline_html_str = inline_html.encode('unicode_escape')
+    #这时候成了ascii 例如    \\u9001\\u68c0\\u65e5\\u671f\\uff1a
+    inline_html_str1 = inline_html_str.decode("utf8")
+    #  \u9646\u6653\u65ed
+    save_path = os.path.dirname(doc_path.replace('HTML', 'HTML')) + '-1.html'
+    f = open(save_path, 'w', encoding='UTF-8')
+    # https://segmentfault.com/q/1010000000344967
+    inline_html_str2 = inline_html_str1.encode('utf-8').decode("unicode_escape")
+    f.write(inline_html_str2)
+    f.close()
+
 def batch_process(docs, limit=None):
     for i, path in enumerate(glob.glob(docs)):
         if i==limit: break
         try:
-            semanticize(path)
+            css_inline_html(path)
+           # semanticize(path)
         except Exception as e:
             print(e)
             import traceback
